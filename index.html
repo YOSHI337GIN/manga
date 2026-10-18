@@ -50,7 +50,8 @@ body.immersive #reader .bar{display:none}
 #editBtn[aria-pressed="true"]{border-color:var(--danger);color:var(--danger)}
 .btn svg{width:18px;height:18px;flex:none}
 @media (pointer:coarse){ .btn{min-height:44px;padding:9px 13px} .bar{padding-block:10px} }
-@media (max-width:640px){ .lbl{display:none} #reader .logo{display:none} .shelf-bar .logo{display:none} }
+@media (max-width:640px){ .lbl{display:none} #reader .logo{display:none} .shelf-bar .logo{display:none}
+  .shelf-bar .tabs{margin-right:auto} .shelf-bar .search{order:3;flex:1 1 100%} .search select{flex:0 1 46%} }
 
 /* ---------- shelf / drive ---------- */
 .shelf-bar{flex-wrap:wrap;row-gap:8px}
@@ -88,7 +89,7 @@ body.immersive #reader .bar{display:none}
 .cover .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:10px;text-align:center;
   font-weight:700;line-height:1.4;color:var(--muted);font-size:var(--step--1);word-break:break-all;
   background:radial-gradient(circle, color-mix(in srgb, var(--muted) 22%, transparent) 1px, transparent 1.4px) 0 0/8px 8px}
-.cover .ph.busy::after{content:"";position:absolute;left:0;bottom:0;height:3px;width:40%;background:var(--accent);animation:slide 1.1s linear infinite}
+.cover .ph.busy::after{content:"表紙を準備中";position:absolute;left:0;right:0;bottom:8px;font-weight:500;font-size:10px;color:var(--muted);opacity:.8}
 .cover.folder{background:none;box-shadow:none;display:flex;align-items:center;justify-content:center}
 .cover.folder svg{width:78%;height:auto;color:var(--accent);opacity:.85}
 .cover.folder .fn{position:absolute;inset:auto 14% 30% 14%;text-align:center;font-weight:700;color:var(--accent-ink);font-size:var(--step--1);line-height:1.3;
@@ -104,9 +105,23 @@ body.editing #libView .del{display:flex}
 .card.armed .del{background:color-mix(in srgb, var(--danger) 70%, var(--ink));}
 .crow{display:flex;gap:6px;align-items:flex-start;min-width:0}
 .crow .ctext{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.crow .ctext{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
 .save{flex:none;background:var(--raise);border:1px solid var(--line);border-radius:8px;width:36px;height:36px;display:grid;place-items:center;color:var(--accent)}
 .save svg{width:18px;height:18px}
 .save.saved{color:var(--muted)}
+/* list view (no covers) */
+.tag{display:none}
+.shelf.list{grid-template-columns:1fr;gap:0}
+.shelf.list .card{flex-direction:row;align-items:center;padding:10px 6px;border-bottom:1px solid var(--line);border-radius:6px;gap:0}
+.shelf.list .card:active{background:var(--raise)}
+.shelf.list .cover{display:none}
+.shelf.list .crow{flex:1;align-items:center;gap:12px}
+.shelf.list .tag{display:inline-flex;flex:none;width:56px;justify-content:center;font-size:11px;font-weight:700;letter-spacing:.04em;padding:4px 0;border-radius:4px;background:var(--raise);color:var(--muted);border:1px solid var(--line)}
+.shelf.list .tag.dir{color:var(--accent);border-color:color-mix(in srgb, var(--accent) 45%, var(--line))}
+.shelf.list .tag.done{color:var(--accent-ink);background:var(--accent);border-color:var(--accent)}
+.shelf.list .ctitle{-webkit-line-clamp:1}
+.shelf.list .card > .del{border-radius:6px}
+body.editing #libView .shelf.list .card > .del{display:flex}
 .ctitle{font-weight:500;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-all}
 .csub{font-size:var(--step--1);color:var(--muted);font-variant-numeric:tabular-nums}
 .empty{max-width:66ch;margin:0 0 22px;line-height:1.85;color:var(--muted)}
@@ -197,10 +212,18 @@ kbd{font-family:inherit;background:var(--raise);border:1px solid var(--line);bor
         <option value="name">名前順</option>
         <option value="added">追加した順</option>
       </select>
+      <select id="dsort" aria-label="並び順" hidden>
+        <option value="name">名前順</option>
+        <option value="name-desc">名前の逆順</option>
+        <option value="date-desc">更新日（新しい順）</option>
+        <option value="date-asc">更新日（古い順）</option>
+      </select>
     </div>
     <div class="tools">
       <button class="btn primary" id="addBtn" type="button" title="端末やドライブのファイルを選んで取り込む">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">本を追加</span></button>
+      <button class="btn" id="viewBtn" type="button" aria-pressed="false" title="表紙あり／表紙なし（一覧）を切り替え">
+        <svg id="viewIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"></svg><span class="lbl" id="viewLbl">表紙あり</span></button>
       <button class="btn" id="editBtn" type="button" aria-pressed="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg><span class="lbl">整理</span></button>
       <button class="btn" id="helpBtn" type="button">
@@ -361,7 +384,7 @@ kbd{font-family:inherit;background:var(--raise);border:1px solid var(--line);bor
 <div class="drop" id="drop" hidden><p>ここにドロップして本棚に取り込む</p></div>
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script>(()=>{var _e=class{constructor(l){this.buffers=[],this.pos=0,this.size=0,l&&(this.buffers.push(l),this.size=l.byteLength,this.pos=0)}read(l){if(this.flatten(),l+this.pos>this.size)return null;let i=this.pos;return this.pos+=l,this.buffers[0].slice(i,this.pos)}readAll(){return this.flatten(),this.buffers[0]||new Uint8Array}write(l){return this.buffers.push(l),this.size+=l.byteLength,this.pos+=l.byteLength,!0}tell(){return this.pos}seek(l,i){let h=this.pos;return i==="SET"?h=l:i==="CUR"?h+=l:h=this.size-l,h<0||h>this.size?!1:(this.pos=h,!0)}flatten(){if(this.buffers.length<=1)return;let l=new Uint8Array(this.size),i=0;for(let h of this.buffers)l.set(h,i),i+=h.byteLength;this.buffers=[l]}};var mi={0:"ERAR_SUCCESS",10:"ERAR_END_ARCHIVE",11:"ERAR_NO_MEMORY",12:"ERAR_BAD_DATA",13:"ERAR_BAD_ARCHIVE",14:"ERAR_UNKNOWN_FORMAT",15:"ERAR_EOPEN",16:"ERAR_ECREATE",17:"ERAR_ECLOSE",18:"ERAR_EREAD",19:"ERAR_EWRITE",20:"ERAR_SMALL_BUF",21:"ERAR_UNKNOWN",22:"ERAR_MISSING_PASSWORD",23:"ERAR_EREFERENCE",24:"ERAR_BAD_PASSWORD"},wi={ERAR_NO_MEMORY:"Not enough memory",ERAR_BAD_DATA:"Archive header or data are damaged",ERAR_BAD_ARCHIVE:"File is not RAR archive",ERAR_UNKNOWN_FORMAT:"Unknown archive format",ERAR_EOPEN:"File open error",ERAR_ECREATE:"File create error",ERAR_ECLOSE:"File close error",ERAR_EREAD:"File read error",ERAR_EWRITE:"File write error",ERAR_SMALL_BUF:"Buffer for archive comment is too small, comment truncated",ERAR_UNKNOWN:"Unknown error",ERAR_MISSING_PASSWORD:"Password for encrypted file or header is not specified",ERAR_EREFERENCE:"Cannot open file source for reference record",ERAR_BAD_PASSWORD:"Wrong password is specified"},Xe=class extends Error{constructor(l,i,h){super(i),this.reason=l,this.file=h}},Ce=class{constructor(l,i=""){this.unrar=l,this._password=i,this._archive=null}getFileList(){let l=this.openArc(!0);function*i(){for(;;){let h=this.processNextFile(()=>!0);if(h==="ERAR_END_ARCHIVE")break;yield h.fileHeader}this.closeArc()}return{arcHeader:l,fileHeaders:i.call(this)}}extract({files:l,password:i}={}){let h=this.openArc(!1,i);function*v(){let E=0;for(;;){let V=()=>!1;if(Array.isArray(l)){if(E===l.length)break;V=({name:W})=>!l.includes(W)}else l&&(V=W=>!l(W));let U=this.processNextFile(V);if(U==="ERAR_END_ARCHIVE")break;U.extraction!=="skipped"&&(E++,yield{fileHeader:U.fileHeader})}this.closeArc()}return{arcHeader:h,files:v.call(this)}}fileCreated(l){}close(l){this.closeFile(l)}openArc(l,i){this._archive=new this.unrar.RarArchive;let h=this._archive.open(this._filePath,i||this._password,l);if(h.state.errCode!==0)throw this.getFailException(h.state.errCode,h.state.errType);return{comment:h.comment,flags:{volume:(h.flags&1)!==0,lock:(h.flags&4)!==0,solid:(h.flags&8)!==0,authInfo:(h.flags&32)!==0,recoveryRecord:(h.flags&64)!==0,headerEncrypted:(h.flags&128)!==0}}}processNextFile(l){function i(W){let ne=[5,6,5,5,4,7],$=[];for(let P of ne)$.push(W&(1<<P)-1),W>>=P;$=$.reverse();let X=P=>P<10?"0"+P:""+P;return`${1980+$[0]}-${X($[1])}-${X($[2])}T${X($[3])}:${X($[4])}:${X($[5]*2)}.000`}function h(W){return{48:"Storing",49:"Fastest",50:"Fast",51:"Normal",52:"Good",53:"Best"}[W]||"Unknown"}let v=this._archive.getFileHeader();if(v.state.errCode===10)return"ERAR_END_ARCHIVE";if(v.state.errCode!==0)throw this.getFailException(v.state.errCode,v.state.errType);let E={name:v.name,flags:{encrypted:(v.flags&4)!==0,solid:(v.flags&16)!==0,directory:(v.flags&32)!==0},packSize:v.packSize,unpSize:v.unpSize,crc:v.crc,time:i(v.time),unpVer:`${Math.floor(v.unpVer/10)}.${v.unpVer%10}`,method:h(v.method),comment:v.comment},V=l(E),U=this._archive.readFile(V);if(U.errCode!==0)throw this.getFailException(U.errCode,U.errType,E.name);return{fileHeader:E,extraction:V?"skipped":"extracted"}}closeArc(){this._archive.delete(),this._archive=null}getFailException(l,i,h){let v=mi[l];return this.closeArc(),new Xe(v,wi[v],h)}};var Fe=class extends Ce{constructor(l,i,h){super(l,h),this.dataFiles={},this.dataFileMap={},this.currentFd=1;let v={file:new _e(new Uint8Array(i)),fd:this.currentFd++};this._filePath="_defaultUnrarJS_.rar",this.dataFiles[this._filePath]=v,this.dataFileMap[v.fd]=this._filePath}extract(l={}){let{arcHeader:i,files:h}=super.extract(l);function*v(){for(let E of h)E.fileHeader.flags.directory||(E.extraction=this.dataFiles[this.getExtractedFileName(E.fileHeader.name)].file.readAll()),yield E}return{arcHeader:i,files:v.call(this)}}getExtractedFileName(l){return`*Extracted*/${l}`}open(l){let i=this.dataFiles[l];return i?i.fd:0}create(l){let i=this.currentFd++;return this.dataFiles[this.getExtractedFileName(l)]={file:new _e,fd:this.currentFd++},this.dataFileMap[i]=this.getExtractedFileName(l),i}closeFile(l){let i=this.dataFiles[this.dataFileMap[l]];i&&i.file.seek(0,"SET")}read(l,i,h){let v=this.dataFiles[this.dataFileMap[l]];if(!v)return-1;let E=v.file.read(h);return E===null?-1:(this.unrar.HEAPU8.set(E,i),E.byteLength)}write(l,i,h){let v=this.dataFiles[this.dataFileMap[l]];return v?(v.file.write(this.unrar.HEAPU8.slice(i,i+h)),!0):!1}tell(l){let i=this.dataFiles[this.dataFileMap[l]];return i?i.file.tell():-1}seek(l,i,h){let v=this.dataFiles[this.dataFileMap[l]];return v?v.file.seek(i,h):!1}};var Ri=(()=>{var j=typeof document<"u"&&document.currentScript?document.currentScript.src:void 0;return function(i){i=i||{};var i=typeof i<"u"?i:{},h,v;i.ready=new Promise(function(t,e){h=t,v=e});var E=Object.assign({},i),V=[],U="./this.program",W=(t,e)=>{throw e},ne=typeof window=="object",$=typeof importScripts=="function",X=typeof process=="object"&&typeof process.versions=="object"&&typeof process.versions.node=="string",P="";function Vt(t){return i.locateFile?i.locateFile(t,P):P+t}var zt,Pe,$e,Bt;(ne||$)&&($?P=self.location.href:typeof document<"u"&&document.currentScript&&(P=document.currentScript.src),j&&(P=j),P.indexOf("blob:")!==0?P=P.substr(0,P.replace(/[?#].*/,"").lastIndexOf("/")+1):P="",zt=t=>{var e=new XMLHttpRequest;return e.open("GET",t,!1),e.send(null),e.responseText},$&&($e=t=>{var e=new XMLHttpRequest;return e.open("GET",t,!1),e.responseType="arraybuffer",e.send(null),new Uint8Array(e.response)}),Pe=(t,e,r)=>{var n=new XMLHttpRequest;n.open("GET",t,!0),n.responseType="arraybuffer",n.onload=()=>{if(n.status==200||n.status==0&&n.response){e(n.response);return}r()},n.onerror=r,n.send(null)},Bt=t=>document.title=t);var bi=i.print||console.log.bind(console),ie=i.printErr||console.warn.bind(console);Object.assign(i,E),E=null,i.arguments&&(V=i.arguments),i.thisProgram&&(U=i.thisProgram),i.quit&&(W=i.quit);var Je=0,S=t=>{Je=t},Gt=()=>Je,ae;i.wasmBinary&&(ae=i.wasmBinary);var Ai=i.noExitRuntime||!0;typeof WebAssembly!="object"&&se("no native wasm support detected");var ge,Qe=!1,Yt;function qt(t,e){t||se(e)}var et=typeof TextDecoder<"u"?new TextDecoder("utf8"):void 0;function Kt(t,e,r){for(var n=e+r,a=e;t[a]&&!(a>=n);)++a;if(a-e>16&&t.buffer&&et)return et.decode(t.subarray(e,a));for(var o="";e<a;){var u=t[e++];if(!(u&128)){o+=String.fromCharCode(u);continue}var s=t[e++]&63;if((u&224)==192){o+=String.fromCharCode((u&31)<<6|s);continue}var f=t[e++]&63;if((u&240)==224?u=(u&15)<<12|s<<6|f:u=(u&7)<<18|s<<12|f<<6|t[e++]&63,u<65536)o+=String.fromCharCode(u);else{var c=u-65536;o+=String.fromCharCode(55296|c>>10,56320|c&1023)}}return o}function Se(t,e){return t?Kt(O,t,e):""}function tt(t,e,r,n){if(!(n>0))return 0;for(var a=r,o=r+n-1,u=0;u<t.length;++u){var s=t.charCodeAt(u);if(s>=55296&&s<=57343){var f=t.charCodeAt(++u);s=65536+((s&1023)<<10)|f&1023}if(s<=127){if(r>=o)break;e[r++]=s}else if(s<=2047){if(r+1>=o)break;e[r++]=192|s>>6,e[r++]=128|s&63}else if(s<=65535){if(r+2>=o)break;e[r++]=224|s>>12,e[r++]=128|s>>6&63,e[r++]=128|s&63}else{if(r+3>=o)break;e[r++]=240|s>>18,e[r++]=128|s>>12&63,e[r++]=128|s>>6&63,e[r++]=128|s&63}}return e[r]=0,r-a}function Xt(t,e,r){return tt(t,O,e,r)}function rt(t){for(var e=0,r=0;r<t.length;++r){var n=t.charCodeAt(r);n>=55296&&n<=57343&&(n=65536+((n&1023)<<10)|t.charCodeAt(++r)&1023),n<=127?++e:n<=2047?e+=2:n<=65535?e+=3:e+=4}return e}var nt=typeof TextDecoder<"u"?new TextDecoder("utf-16le"):void 0;function Zt(t,e){for(var r=t,n=r>>1,a=n+e/2;!(n>=a)&&ye[n];)++n;if(r=n<<1,r-t>32&&nt)return nt.decode(O.subarray(t,r));for(var o="",u=0;!(u>=e/2);++u){var s=Z[t+u*2>>1];if(s==0)break;o+=String.fromCharCode(s)}return o}function Jt(t,e,r){if(r===void 0&&(r=2147483647),r<2)return 0;r-=2;for(var n=e,a=r<t.length*2?r/2:t.length,o=0;o<a;++o){var u=t.charCodeAt(o);Z[e>>1]=u,e+=2}return Z[e>>1]=0,e-n}function Qt(t){return t.length*2}function De(t,e){for(var r=0,n="";!(r>=e/4);){var a=_[t+r*4>>2];if(a==0)break;if(++r,a>=65536){var o=a-65536;n+=String.fromCharCode(55296|o>>10,56320|o&1023)}else n+=String.fromCharCode(a)}return n}function er(t,e,r){if(r===void 0&&(r=2147483647),r<4)return 0;for(var n=e,a=n+r-4,o=0;o<t.length;++o){var u=t.charCodeAt(o);if(u>=55296&&u<=57343){var s=t.charCodeAt(++o);u=65536+((u&1023)<<10)|s&1023}if(_[e>>2]=u,e+=4,e+4>a)break}return _[e>>2]=0,e-n}function tr(t){for(var e=0,r=0;r<t.length;++r){var n=t.charCodeAt(r);n>=55296&&n<=57343&&++r,e+=4}return e}function it(t){var e=rt(t)+1,r=he(e);return r&&tt(t,H,r,e),r}function rr(t,e,r){for(var n=0;n<t.length;++n)H[e++>>0]=t.charCodeAt(n);r||(H[e>>0]=0)}var ke,H,O,Z,ye,_,m,at,ot;function st(t){ke=t,i.HEAP8=H=new Int8Array(t),i.HEAP16=Z=new Int16Array(t),i.HEAP32=_=new Int32Array(t),i.HEAPU8=O=new Uint8Array(t),i.HEAPU16=ye=new Uint16Array(t),i.HEAPU32=m=new Uint32Array(t),i.HEAPF32=at=new Float32Array(t),i.HEAPF64=ot=new Float64Array(t)}var Ti=i.INITIAL_MEMORY||16777216,ut,ft=[],ct=[],lt=[],nr=!1;function ir(){if(i.preRun)for(typeof i.preRun=="function"&&(i.preRun=[i.preRun]);i.preRun.length;)sr(i.preRun.shift());xe(ft)}function ar(){nr=!0,xe(ct)}function or(){if(i.postRun)for(typeof i.postRun=="function"&&(i.postRun=[i.postRun]);i.postRun.length;)fr(i.postRun.shift());xe(lt)}function sr(t){ft.unshift(t)}function ur(t){ct.unshift(t)}function fr(t){lt.unshift(t)}var q=0,Oe=null,oe=null;function cr(t){q++,i.monitorRunDependencies&&i.monitorRunDependencies(q)}function lr(t){if(q--,i.monitorRunDependencies&&i.monitorRunDependencies(q),q==0&&(Oe!==null&&(clearInterval(Oe),Oe=null),oe)){var e=oe;oe=null,e()}}function se(t){i.onAbort&&i.onAbort(t),t="Aborted("+t+")",ie(t),Qe=!0,Yt=1,t+=". Build with -sASSERTIONS for more info.";var e=new WebAssembly.RuntimeError(t);throw v(e),e}var dr="data:application/octet-stream;base64,";function dt(t){return t.startsWith(dr)}function pt(t){return t.startsWith("file://")}var D;D="unrar.wasm",dt(D)||(D=Vt(D));function ht(t){try{if(t==D&&ae)return new Uint8Array(ae);if($e)return $e(t);throw"both async and sync fetching of the wasm failed"}catch(e){se(e)}}function pr(){if(!ae&&(ne||$)){if(typeof fetch=="function"&&!pt(D))return fetch(D,{credentials:"same-origin"}).then(function(t){if(!t.ok)throw"failed to load wasm binary file at '"+D+"'";return t.arrayBuffer()}).catch(function(){return ht(D)});if(Pe)return new Promise(function(t,e){Pe(D,function(r){t(new Uint8Array(r))},e)})}return Promise.resolve().then(function(){return ht(D)})}function hr(){var t={a:Xn};function e(u,s){var f=u.exports;i.asm=f,ge=i.asm.ka,st(ge.buffer),ut=i.asm.oa,ur(i.asm.la),lr("wasm-instantiate")}cr("wasm-instantiate");function r(u){e(u.instance)}function n(u){return pr().then(function(s){return WebAssembly.instantiate(s,t)}).then(function(s){return s}).then(u,function(s){ie("failed to asynchronously prepare wasm: "+s),se(s)})}function a(){return!ae&&typeof WebAssembly.instantiateStreaming=="function"&&!dt(D)&&!pt(D)&&typeof fetch=="function"?fetch(D,{credentials:"same-origin"}).then(function(u){var s=WebAssembly.instantiateStreaming(u,t);return s.then(r,function(f){return ie("wasm streaming compile failed: "+f),ie("falling back to ArrayBuffer instantiation"),n(r)})}):n(r)}if(i.instantiateWasm)try{var o=i.instantiateWasm(t,e);return o}catch(u){return ie("Module.instantiateWasm callback failed with error: "+u),!1}return a().catch(v),{}}function xe(t){for(;t.length>0;){var e=t.shift();if(typeof e=="function"){e(i);continue}var r=e.func;typeof r=="number"?e.arg===void 0?T(r)():T(r)(e.arg):r(e.arg===void 0?null:e.arg)}}var me=[];function T(t){var e=me[t];return e||(t>=me.length&&(me.length=t+1),me[t]=e=ut.get(t)),e}function vr(t){return he(t+24)+24}var vt=[];function _r(t){t.add_ref()}var _t=0;function gr(t){var e=new J(t);return e.get_caught()||(e.set_caught(!0),_t--),e.set_rethrown(!1),vt.push(e),_r(e),e.get_exception_ptr()}var K=0;function J(t){this.excPtr=t,this.ptr=t-24,this.set_type=function(e){m[this.ptr+4>>2]=e},this.get_type=function(){return m[this.ptr+4>>2]},this.set_destructor=function(e){m[this.ptr+8>>2]=e},this.get_destructor=function(){return m[this.ptr+8>>2]},this.set_refcount=function(e){_[this.ptr>>2]=e},this.set_caught=function(e){e=e?1:0,H[this.ptr+12>>0]=e},this.get_caught=function(){return H[this.ptr+12>>0]!=0},this.set_rethrown=function(e){e=e?1:0,H[this.ptr+13>>0]=e},this.get_rethrown=function(){return H[this.ptr+13>>0]!=0},this.init=function(e,r){this.set_adjusted_ptr(0),this.set_type(e),this.set_destructor(r),this.set_refcount(0),this.set_caught(!1),this.set_rethrown(!1)},this.add_ref=function(){var e=_[this.ptr>>2];_[this.ptr>>2]=e+1},this.release_ref=function(){var e=_[this.ptr>>2];return _[this.ptr>>2]=e-1,e===1},this.set_adjusted_ptr=function(e){m[this.ptr+16>>2]=e},this.get_adjusted_ptr=function(){return m[this.ptr+16>>2]},this.get_exception_ptr=function(){var e=Dt(this.get_type());if(e)return m[this.excPtr>>2];var r=this.get_adjusted_ptr();return r!==0?r:this.excPtr}}function gt(t){return N(new J(t).ptr)}function yr(t){if(t.release_ref()&&!t.get_rethrown()){var e=t.get_destructor();e&&T(e)(t.excPtr),gt(t.excPtr)}}function mr(){w(0);var t=vt.pop();yr(t),K=0}function wr(t){throw K||(K=t),t}function Rr(){var t=K;if(!t)return S(0),0;var e=new J(t);e.set_adjusted_ptr(t);var r=e.get_type();if(!r)return S(0),t;for(var n=Array.prototype.slice.call(arguments),a=0;a<n.length;a++){var o=n[a];if(o===0||o===r)break;var u=e.ptr+16;if(Te(o,r,u))return S(o),t}return S(r),t}function br(){var t=K;if(!t)return S(0),0;var e=new J(t);e.set_adjusted_ptr(t);var r=e.get_type();if(!r)return S(0),t;for(var n=Array.prototype.slice.call(arguments),a=0;a<n.length;a++){var o=n[a];if(o===0||o===r)break;var u=e.ptr+16;if(Te(o,r,u))return S(o),t}return S(r),t}function Ar(){var t=K;if(!t)return S(0),0;var e=new J(t);e.set_adjusted_ptr(t);var r=e.get_type();if(!r)return S(0),t;for(var n=Array.prototype.slice.call(arguments),a=0;a<n.length;a++){var o=n[a];if(o===0||o===r)break;var u=e.ptr+16;if(Te(o,r,u))return S(o),t}return S(r),t}function Tr(t,e,r){var n=new J(t);throw n.init(e,r),K=t,_t++,t}var yt={varargs:void 0,get:function(){yt.varargs+=4;var t=_[yt.varargs-4>>2];return t},getStr:function(t){var e=Se(t);return e}};function Er(t,e,r,n,a){}function Cr(t,e){}var we={};function mt(t){for(;t.length;){var e=t.pop(),r=t.pop();r(e)}}function ue(t){return this.fromWireType(m[t>>2])}var Q={},ee={},Re={},Fr=48,Pr=57;function je(t){if(t===void 0)return"_unknown";t=t.replace(/[^a-zA-Z0-9_]/g,"$");var e=t.charCodeAt(0);return e>=Fr&&e<=Pr?"_"+t:t}function Ue(t,e){return t=je(t),new Function("body","return function "+t+`() {
+<script id="unrarBundle">(()=>{var _e=class{constructor(l){this.buffers=[],this.pos=0,this.size=0,l&&(this.buffers.push(l),this.size=l.byteLength,this.pos=0)}read(l){if(this.flatten(),l+this.pos>this.size)return null;let i=this.pos;return this.pos+=l,this.buffers[0].slice(i,this.pos)}readAll(){return this.flatten(),this.buffers[0]||new Uint8Array}write(l){return this.buffers.push(l),this.size+=l.byteLength,this.pos+=l.byteLength,!0}tell(){return this.pos}seek(l,i){let h=this.pos;return i==="SET"?h=l:i==="CUR"?h+=l:h=this.size-l,h<0||h>this.size?!1:(this.pos=h,!0)}flatten(){if(this.buffers.length<=1)return;let l=new Uint8Array(this.size),i=0;for(let h of this.buffers)l.set(h,i),i+=h.byteLength;this.buffers=[l]}};var mi={0:"ERAR_SUCCESS",10:"ERAR_END_ARCHIVE",11:"ERAR_NO_MEMORY",12:"ERAR_BAD_DATA",13:"ERAR_BAD_ARCHIVE",14:"ERAR_UNKNOWN_FORMAT",15:"ERAR_EOPEN",16:"ERAR_ECREATE",17:"ERAR_ECLOSE",18:"ERAR_EREAD",19:"ERAR_EWRITE",20:"ERAR_SMALL_BUF",21:"ERAR_UNKNOWN",22:"ERAR_MISSING_PASSWORD",23:"ERAR_EREFERENCE",24:"ERAR_BAD_PASSWORD"},wi={ERAR_NO_MEMORY:"Not enough memory",ERAR_BAD_DATA:"Archive header or data are damaged",ERAR_BAD_ARCHIVE:"File is not RAR archive",ERAR_UNKNOWN_FORMAT:"Unknown archive format",ERAR_EOPEN:"File open error",ERAR_ECREATE:"File create error",ERAR_ECLOSE:"File close error",ERAR_EREAD:"File read error",ERAR_EWRITE:"File write error",ERAR_SMALL_BUF:"Buffer for archive comment is too small, comment truncated",ERAR_UNKNOWN:"Unknown error",ERAR_MISSING_PASSWORD:"Password for encrypted file or header is not specified",ERAR_EREFERENCE:"Cannot open file source for reference record",ERAR_BAD_PASSWORD:"Wrong password is specified"},Xe=class extends Error{constructor(l,i,h){super(i),this.reason=l,this.file=h}},Ce=class{constructor(l,i=""){this.unrar=l,this._password=i,this._archive=null}getFileList(){let l=this.openArc(!0);function*i(){for(;;){let h=this.processNextFile(()=>!0);if(h==="ERAR_END_ARCHIVE")break;yield h.fileHeader}this.closeArc()}return{arcHeader:l,fileHeaders:i.call(this)}}extract({files:l,password:i}={}){let h=this.openArc(!1,i);function*v(){let E=0;for(;;){let V=()=>!1;if(Array.isArray(l)){if(E===l.length)break;V=({name:W})=>!l.includes(W)}else l&&(V=W=>!l(W));let U=this.processNextFile(V);if(U==="ERAR_END_ARCHIVE")break;U.extraction!=="skipped"&&(E++,yield{fileHeader:U.fileHeader})}this.closeArc()}return{arcHeader:h,files:v.call(this)}}fileCreated(l){}close(l){this.closeFile(l)}openArc(l,i){this._archive=new this.unrar.RarArchive;let h=this._archive.open(this._filePath,i||this._password,l);if(h.state.errCode!==0)throw this.getFailException(h.state.errCode,h.state.errType);return{comment:h.comment,flags:{volume:(h.flags&1)!==0,lock:(h.flags&4)!==0,solid:(h.flags&8)!==0,authInfo:(h.flags&32)!==0,recoveryRecord:(h.flags&64)!==0,headerEncrypted:(h.flags&128)!==0}}}processNextFile(l){function i(W){let ne=[5,6,5,5,4,7],$=[];for(let P of ne)$.push(W&(1<<P)-1),W>>=P;$=$.reverse();let X=P=>P<10?"0"+P:""+P;return`${1980+$[0]}-${X($[1])}-${X($[2])}T${X($[3])}:${X($[4])}:${X($[5]*2)}.000`}function h(W){return{48:"Storing",49:"Fastest",50:"Fast",51:"Normal",52:"Good",53:"Best"}[W]||"Unknown"}let v=this._archive.getFileHeader();if(v.state.errCode===10)return"ERAR_END_ARCHIVE";if(v.state.errCode!==0)throw this.getFailException(v.state.errCode,v.state.errType);let E={name:v.name,flags:{encrypted:(v.flags&4)!==0,solid:(v.flags&16)!==0,directory:(v.flags&32)!==0},packSize:v.packSize,unpSize:v.unpSize,crc:v.crc,time:i(v.time),unpVer:`${Math.floor(v.unpVer/10)}.${v.unpVer%10}`,method:h(v.method),comment:v.comment},V=l(E),U=this._archive.readFile(V);if(U.errCode!==0)throw this.getFailException(U.errCode,U.errType,E.name);return{fileHeader:E,extraction:V?"skipped":"extracted"}}closeArc(){this._archive.delete(),this._archive=null}getFailException(l,i,h){let v=mi[l];return this.closeArc(),new Xe(v,wi[v],h)}};var Fe=class extends Ce{constructor(l,i,h){super(l,h),this.dataFiles={},this.dataFileMap={},this.currentFd=1;let v={file:new _e(new Uint8Array(i)),fd:this.currentFd++};this._filePath="_defaultUnrarJS_.rar",this.dataFiles[this._filePath]=v,this.dataFileMap[v.fd]=this._filePath}extract(l={}){let{arcHeader:i,files:h}=super.extract(l);function*v(){for(let E of h)E.fileHeader.flags.directory||(E.extraction=this.dataFiles[this.getExtractedFileName(E.fileHeader.name)].file.readAll()),yield E}return{arcHeader:i,files:v.call(this)}}getExtractedFileName(l){return`*Extracted*/${l}`}open(l){let i=this.dataFiles[l];return i?i.fd:0}create(l){let i=this.currentFd++;return this.dataFiles[this.getExtractedFileName(l)]={file:new _e,fd:this.currentFd++},this.dataFileMap[i]=this.getExtractedFileName(l),i}closeFile(l){let i=this.dataFiles[this.dataFileMap[l]];i&&i.file.seek(0,"SET")}read(l,i,h){let v=this.dataFiles[this.dataFileMap[l]];if(!v)return-1;let E=v.file.read(h);return E===null?-1:(this.unrar.HEAPU8.set(E,i),E.byteLength)}write(l,i,h){let v=this.dataFiles[this.dataFileMap[l]];return v?(v.file.write(this.unrar.HEAPU8.slice(i,i+h)),!0):!1}tell(l){let i=this.dataFiles[this.dataFileMap[l]];return i?i.file.tell():-1}seek(l,i,h){let v=this.dataFiles[this.dataFileMap[l]];return v?v.file.seek(i,h):!1}};var Ri=(()=>{var j=typeof document<"u"&&document.currentScript?document.currentScript.src:void 0;return function(i){i=i||{};var i=typeof i<"u"?i:{},h,v;i.ready=new Promise(function(t,e){h=t,v=e});var E=Object.assign({},i),V=[],U="./this.program",W=(t,e)=>{throw e},ne=typeof window=="object",$=typeof importScripts=="function",X=typeof process=="object"&&typeof process.versions=="object"&&typeof process.versions.node=="string",P="";function Vt(t){return i.locateFile?i.locateFile(t,P):P+t}var zt,Pe,$e,Bt;(ne||$)&&($?P=self.location.href:typeof document<"u"&&document.currentScript&&(P=document.currentScript.src),j&&(P=j),P.indexOf("blob:")!==0?P=P.substr(0,P.replace(/[?#].*/,"").lastIndexOf("/")+1):P="",zt=t=>{var e=new XMLHttpRequest;return e.open("GET",t,!1),e.send(null),e.responseText},$&&($e=t=>{var e=new XMLHttpRequest;return e.open("GET",t,!1),e.responseType="arraybuffer",e.send(null),new Uint8Array(e.response)}),Pe=(t,e,r)=>{var n=new XMLHttpRequest;n.open("GET",t,!0),n.responseType="arraybuffer",n.onload=()=>{if(n.status==200||n.status==0&&n.response){e(n.response);return}r()},n.onerror=r,n.send(null)},Bt=t=>document.title=t);var bi=i.print||console.log.bind(console),ie=i.printErr||console.warn.bind(console);Object.assign(i,E),E=null,i.arguments&&(V=i.arguments),i.thisProgram&&(U=i.thisProgram),i.quit&&(W=i.quit);var Je=0,S=t=>{Je=t},Gt=()=>Je,ae;i.wasmBinary&&(ae=i.wasmBinary);var Ai=i.noExitRuntime||!0;typeof WebAssembly!="object"&&se("no native wasm support detected");var ge,Qe=!1,Yt;function qt(t,e){t||se(e)}var et=typeof TextDecoder<"u"?new TextDecoder("utf8"):void 0;function Kt(t,e,r){for(var n=e+r,a=e;t[a]&&!(a>=n);)++a;if(a-e>16&&t.buffer&&et)return et.decode(t.subarray(e,a));for(var o="";e<a;){var u=t[e++];if(!(u&128)){o+=String.fromCharCode(u);continue}var s=t[e++]&63;if((u&224)==192){o+=String.fromCharCode((u&31)<<6|s);continue}var f=t[e++]&63;if((u&240)==224?u=(u&15)<<12|s<<6|f:u=(u&7)<<18|s<<12|f<<6|t[e++]&63,u<65536)o+=String.fromCharCode(u);else{var c=u-65536;o+=String.fromCharCode(55296|c>>10,56320|c&1023)}}return o}function Se(t,e){return t?Kt(O,t,e):""}function tt(t,e,r,n){if(!(n>0))return 0;for(var a=r,o=r+n-1,u=0;u<t.length;++u){var s=t.charCodeAt(u);if(s>=55296&&s<=57343){var f=t.charCodeAt(++u);s=65536+((s&1023)<<10)|f&1023}if(s<=127){if(r>=o)break;e[r++]=s}else if(s<=2047){if(r+1>=o)break;e[r++]=192|s>>6,e[r++]=128|s&63}else if(s<=65535){if(r+2>=o)break;e[r++]=224|s>>12,e[r++]=128|s>>6&63,e[r++]=128|s&63}else{if(r+3>=o)break;e[r++]=240|s>>18,e[r++]=128|s>>12&63,e[r++]=128|s>>6&63,e[r++]=128|s&63}}return e[r]=0,r-a}function Xt(t,e,r){return tt(t,O,e,r)}function rt(t){for(var e=0,r=0;r<t.length;++r){var n=t.charCodeAt(r);n>=55296&&n<=57343&&(n=65536+((n&1023)<<10)|t.charCodeAt(++r)&1023),n<=127?++e:n<=2047?e+=2:n<=65535?e+=3:e+=4}return e}var nt=typeof TextDecoder<"u"?new TextDecoder("utf-16le"):void 0;function Zt(t,e){for(var r=t,n=r>>1,a=n+e/2;!(n>=a)&&ye[n];)++n;if(r=n<<1,r-t>32&&nt)return nt.decode(O.subarray(t,r));for(var o="",u=0;!(u>=e/2);++u){var s=Z[t+u*2>>1];if(s==0)break;o+=String.fromCharCode(s)}return o}function Jt(t,e,r){if(r===void 0&&(r=2147483647),r<2)return 0;r-=2;for(var n=e,a=r<t.length*2?r/2:t.length,o=0;o<a;++o){var u=t.charCodeAt(o);Z[e>>1]=u,e+=2}return Z[e>>1]=0,e-n}function Qt(t){return t.length*2}function De(t,e){for(var r=0,n="";!(r>=e/4);){var a=_[t+r*4>>2];if(a==0)break;if(++r,a>=65536){var o=a-65536;n+=String.fromCharCode(55296|o>>10,56320|o&1023)}else n+=String.fromCharCode(a)}return n}function er(t,e,r){if(r===void 0&&(r=2147483647),r<4)return 0;for(var n=e,a=n+r-4,o=0;o<t.length;++o){var u=t.charCodeAt(o);if(u>=55296&&u<=57343){var s=t.charCodeAt(++o);u=65536+((u&1023)<<10)|s&1023}if(_[e>>2]=u,e+=4,e+4>a)break}return _[e>>2]=0,e-n}function tr(t){for(var e=0,r=0;r<t.length;++r){var n=t.charCodeAt(r);n>=55296&&n<=57343&&++r,e+=4}return e}function it(t){var e=rt(t)+1,r=he(e);return r&&tt(t,H,r,e),r}function rr(t,e,r){for(var n=0;n<t.length;++n)H[e++>>0]=t.charCodeAt(n);r||(H[e>>0]=0)}var ke,H,O,Z,ye,_,m,at,ot;function st(t){ke=t,i.HEAP8=H=new Int8Array(t),i.HEAP16=Z=new Int16Array(t),i.HEAP32=_=new Int32Array(t),i.HEAPU8=O=new Uint8Array(t),i.HEAPU16=ye=new Uint16Array(t),i.HEAPU32=m=new Uint32Array(t),i.HEAPF32=at=new Float32Array(t),i.HEAPF64=ot=new Float64Array(t)}var Ti=i.INITIAL_MEMORY||16777216,ut,ft=[],ct=[],lt=[],nr=!1;function ir(){if(i.preRun)for(typeof i.preRun=="function"&&(i.preRun=[i.preRun]);i.preRun.length;)sr(i.preRun.shift());xe(ft)}function ar(){nr=!0,xe(ct)}function or(){if(i.postRun)for(typeof i.postRun=="function"&&(i.postRun=[i.postRun]);i.postRun.length;)fr(i.postRun.shift());xe(lt)}function sr(t){ft.unshift(t)}function ur(t){ct.unshift(t)}function fr(t){lt.unshift(t)}var q=0,Oe=null,oe=null;function cr(t){q++,i.monitorRunDependencies&&i.monitorRunDependencies(q)}function lr(t){if(q--,i.monitorRunDependencies&&i.monitorRunDependencies(q),q==0&&(Oe!==null&&(clearInterval(Oe),Oe=null),oe)){var e=oe;oe=null,e()}}function se(t){i.onAbort&&i.onAbort(t),t="Aborted("+t+")",ie(t),Qe=!0,Yt=1,t+=". Build with -sASSERTIONS for more info.";var e=new WebAssembly.RuntimeError(t);throw v(e),e}var dr="data:application/octet-stream;base64,";function dt(t){return t.startsWith(dr)}function pt(t){return t.startsWith("file://")}var D;D="unrar.wasm",dt(D)||(D=Vt(D));function ht(t){try{if(t==D&&ae)return new Uint8Array(ae);if($e)return $e(t);throw"both async and sync fetching of the wasm failed"}catch(e){se(e)}}function pr(){if(!ae&&(ne||$)){if(typeof fetch=="function"&&!pt(D))return fetch(D,{credentials:"same-origin"}).then(function(t){if(!t.ok)throw"failed to load wasm binary file at '"+D+"'";return t.arrayBuffer()}).catch(function(){return ht(D)});if(Pe)return new Promise(function(t,e){Pe(D,function(r){t(new Uint8Array(r))},e)})}return Promise.resolve().then(function(){return ht(D)})}function hr(){var t={a:Xn};function e(u,s){var f=u.exports;i.asm=f,ge=i.asm.ka,st(ge.buffer),ut=i.asm.oa,ur(i.asm.la),lr("wasm-instantiate")}cr("wasm-instantiate");function r(u){e(u.instance)}function n(u){return pr().then(function(s){return WebAssembly.instantiate(s,t)}).then(function(s){return s}).then(u,function(s){ie("failed to asynchronously prepare wasm: "+s),se(s)})}function a(){return!ae&&typeof WebAssembly.instantiateStreaming=="function"&&!dt(D)&&!pt(D)&&typeof fetch=="function"?fetch(D,{credentials:"same-origin"}).then(function(u){var s=WebAssembly.instantiateStreaming(u,t);return s.then(r,function(f){return ie("wasm streaming compile failed: "+f),ie("falling back to ArrayBuffer instantiation"),n(r)})}):n(r)}if(i.instantiateWasm)try{var o=i.instantiateWasm(t,e);return o}catch(u){return ie("Module.instantiateWasm callback failed with error: "+u),!1}return a().catch(v),{}}function xe(t){for(;t.length>0;){var e=t.shift();if(typeof e=="function"){e(i);continue}var r=e.func;typeof r=="number"?e.arg===void 0?T(r)():T(r)(e.arg):r(e.arg===void 0?null:e.arg)}}var me=[];function T(t){var e=me[t];return e||(t>=me.length&&(me.length=t+1),me[t]=e=ut.get(t)),e}function vr(t){return he(t+24)+24}var vt=[];function _r(t){t.add_ref()}var _t=0;function gr(t){var e=new J(t);return e.get_caught()||(e.set_caught(!0),_t--),e.set_rethrown(!1),vt.push(e),_r(e),e.get_exception_ptr()}var K=0;function J(t){this.excPtr=t,this.ptr=t-24,this.set_type=function(e){m[this.ptr+4>>2]=e},this.get_type=function(){return m[this.ptr+4>>2]},this.set_destructor=function(e){m[this.ptr+8>>2]=e},this.get_destructor=function(){return m[this.ptr+8>>2]},this.set_refcount=function(e){_[this.ptr>>2]=e},this.set_caught=function(e){e=e?1:0,H[this.ptr+12>>0]=e},this.get_caught=function(){return H[this.ptr+12>>0]!=0},this.set_rethrown=function(e){e=e?1:0,H[this.ptr+13>>0]=e},this.get_rethrown=function(){return H[this.ptr+13>>0]!=0},this.init=function(e,r){this.set_adjusted_ptr(0),this.set_type(e),this.set_destructor(r),this.set_refcount(0),this.set_caught(!1),this.set_rethrown(!1)},this.add_ref=function(){var e=_[this.ptr>>2];_[this.ptr>>2]=e+1},this.release_ref=function(){var e=_[this.ptr>>2];return _[this.ptr>>2]=e-1,e===1},this.set_adjusted_ptr=function(e){m[this.ptr+16>>2]=e},this.get_adjusted_ptr=function(){return m[this.ptr+16>>2]},this.get_exception_ptr=function(){var e=Dt(this.get_type());if(e)return m[this.excPtr>>2];var r=this.get_adjusted_ptr();return r!==0?r:this.excPtr}}function gt(t){return N(new J(t).ptr)}function yr(t){if(t.release_ref()&&!t.get_rethrown()){var e=t.get_destructor();e&&T(e)(t.excPtr),gt(t.excPtr)}}function mr(){w(0);var t=vt.pop();yr(t),K=0}function wr(t){throw K||(K=t),t}function Rr(){var t=K;if(!t)return S(0),0;var e=new J(t);e.set_adjusted_ptr(t);var r=e.get_type();if(!r)return S(0),t;for(var n=Array.prototype.slice.call(arguments),a=0;a<n.length;a++){var o=n[a];if(o===0||o===r)break;var u=e.ptr+16;if(Te(o,r,u))return S(o),t}return S(r),t}function br(){var t=K;if(!t)return S(0),0;var e=new J(t);e.set_adjusted_ptr(t);var r=e.get_type();if(!r)return S(0),t;for(var n=Array.prototype.slice.call(arguments),a=0;a<n.length;a++){var o=n[a];if(o===0||o===r)break;var u=e.ptr+16;if(Te(o,r,u))return S(o),t}return S(r),t}function Ar(){var t=K;if(!t)return S(0),0;var e=new J(t);e.set_adjusted_ptr(t);var r=e.get_type();if(!r)return S(0),t;for(var n=Array.prototype.slice.call(arguments),a=0;a<n.length;a++){var o=n[a];if(o===0||o===r)break;var u=e.ptr+16;if(Te(o,r,u))return S(o),t}return S(r),t}function Tr(t,e,r){var n=new J(t);throw n.init(e,r),K=t,_t++,t}var yt={varargs:void 0,get:function(){yt.varargs+=4;var t=_[yt.varargs-4>>2];return t},getStr:function(t){var e=Se(t);return e}};function Er(t,e,r,n,a){}function Cr(t,e){}var we={};function mt(t){for(;t.length;){var e=t.pop(),r=t.pop();r(e)}}function ue(t){return this.fromWireType(m[t>>2])}var Q={},ee={},Re={},Fr=48,Pr=57;function je(t){if(t===void 0)return"_unknown";t=t.replace(/[^a-zA-Z0-9_]/g,"$");var e=t.charCodeAt(0);return e>=Fr&&e<=Pr?"_"+t:t}function Ue(t,e){return t=je(t),new Function("body","return function "+t+`() {
     "use strict";    return body.apply(this, arguments);
 };
 `)(e)}function We(t,e){var r=Ue(e,function(n){this.name=e,this.message=n;var a=new Error(n).stack;a!==void 0&&(this.stack=this.toString()+`
@@ -379,6 +402,65 @@ throwBindingError('function `+t+" called with ' + arguments.length + ' arguments
 return ret;
 `),g+=`}
 `,C.push(g);var L=ln(Function,C).apply(null,F);return L}function dn(t,e,r,n,a,o,u,s){var f=Pt(r,n);e=k(e),o=M(a,o),te([],[t],function(c){c=c[0];var d=c.name+"."+e;e.startsWith("@@")&&(e=Symbol[e.substring(2)]),s&&c.registeredClass.pureVirtualFunctions.push(e);function p(){Ve("Cannot call "+d+" due to unbound types",f)}var g=c.registeredClass.instancePrototype,R=g[e];return R===void 0||R.overloadTable===void 0&&R.className!==c.name&&R.argCount===r-2?(p.argCount=r-2,p.className=c.name,g[e]=p):(Ct(g,e,d),g[e].overloadTable[r-2]=p),te([],f,function(C){var F=$t(d,C,c,o,u);return g[e].overloadTable===void 0?(F.argCount=r-2,g[e]=F):g[e].overloadTable[r-2]=F,[]}),[]})}var ze=[],I=[{},{value:void 0},{value:null},{value:!0},{value:!1}];function pn(t){t>4&&--I[t].refcount===0&&(I[t]=void 0,ze.push(t))}function hn(){for(var t=0,e=5;e<I.length;++e)I[e]!==void 0&&++t;return t}function vn(){for(var t=5;t<I.length;++t)if(I[t]!==void 0)return I[t];return null}function _n(){i.count_emval_handles=hn,i.get_first_emval=vn}var Be={toValue:t=>(t||y("Cannot use deleted val. handle = "+t),I[t].value),toHandle:t=>{switch(t){case void 0:return 1;case null:return 2;case!0:return 3;case!1:return 4;default:{var e=ze.length?ze.pop():I.length;return I[e]={refcount:1,value:t},e}}}};function gn(t,e){e=k(e),z(t,{name:e,fromWireType:function(r){var n=Be.toValue(r);return pn(r),n},toWireType:function(r,n){return Be.toHandle(n)},argPackAdvance:8,readValueFromPointer:ue,destructorFunction:null})}function Ge(t){if(t===null)return"null";var e=typeof t;return e==="object"||e==="array"||e==="function"?t.toString():""+t}function yn(t,e){switch(e){case 2:return function(r){return this.fromWireType(at[r>>2])};case 3:return function(r){return this.fromWireType(ot[r>>3])};default:throw new TypeError("Unknown float type: "+t)}}function mn(t,e,r){var n=He(r);e=k(e),z(t,{name:e,fromWireType:function(a){return a},toWireType:function(a,o){return o},argPackAdvance:8,readValueFromPointer:yn(e,n),destructorFunction:null})}function wn(t,e,r){switch(e){case 0:return r?function(a){return H[a]}:function(a){return O[a]};case 1:return r?function(a){return Z[a>>1]}:function(a){return ye[a>>1]};case 2:return r?function(a){return _[a>>2]}:function(a){return m[a>>2]};default:throw new TypeError("Unknown integer type: "+t)}}function Rn(t,e,r,n,a){e=k(e),a===-1&&(a=4294967295);var o=He(r),u=p=>p;if(n===0){var s=32-8*r;u=p=>p<<s>>>s}var f=e.includes("unsigned"),c=(p,g)=>{},d;f?d=function(p,g){return c(g,this.name),g>>>0}:d=function(p,g){return c(g,this.name),g},z(t,{name:e,fromWireType:u,toWireType:d,argPackAdvance:8,readValueFromPointer:wn(e,o,n!==0),destructorFunction:null})}function bn(t,e,r){var n=[Int8Array,Uint8Array,Int16Array,Uint16Array,Int32Array,Uint32Array,Float32Array,Float64Array],a=n[e];function o(u){u=u>>2;var s=m,f=s[u],c=s[u+1];return new a(ke,c,f)}r=k(r),z(t,{name:r,fromWireType:o,argPackAdvance:8,readValueFromPointer:o},{ignoreDuplicateRegistrations:!0})}function An(t,e){e=k(e);var r=e==="std::string";z(t,{name:e,fromWireType:function(n){var a=m[n>>2],o;if(r)for(var u=n+4,s=0;s<=a;++s){var f=n+4+s;if(s==a||O[f]==0){var c=f-u,d=Se(u,c);o===void 0?o=d:(o+="\0",o+=d),u=f+1}}else{for(var p=new Array(a),s=0;s<a;++s)p[s]=String.fromCharCode(O[n+4+s]);o=p.join("")}return N(n),o},toWireType:function(n,a){a instanceof ArrayBuffer&&(a=new Uint8Array(a));var o,u=typeof a=="string";u||a instanceof Uint8Array||a instanceof Uint8ClampedArray||a instanceof Int8Array||y("Cannot pass non-string to std::string"),r&&u?o=()=>rt(a):o=()=>a.length;var s=o(),f=he(4+s+1);if(m[f>>2]=s,r&&u)Xt(a,f+4,s+1);else if(u)for(var c=0;c<s;++c){var d=a.charCodeAt(c);d>255&&(N(f),y("String has UTF-16 code units that do not fit in 8 bits")),O[f+4+c]=d}else for(var c=0;c<s;++c)O[f+4+c]=a[c];return n!==null&&n.push(N,f),f},argPackAdvance:8,readValueFromPointer:ue,destructorFunction:function(n){N(n)}})}function Tn(t,e,r){r=k(r);var n,a,o,u,s;e===2?(n=Zt,a=Jt,u=Qt,o=()=>ye,s=1):e===4&&(n=De,a=er,u=tr,o=()=>m,s=2),z(t,{name:r,fromWireType:function(f){for(var c=m[f>>2],d=o(),p,g=f+4,R=0;R<=c;++R){var C=f+4+R*e;if(R==c||d[C>>s]==0){var F=C-g,x=n(g,F);p===void 0?p=x:(p+="\0",p+=x),g=C+e}}return N(f),p},toWireType:function(f,c){typeof c!="string"&&y("Cannot pass non-string to C++ string type "+r);var d=u(c),p=he(4+d+e);return m[p>>2]=d>>s,a(c,p+4,d+e),f!==null&&f.push(N,p),p},argPackAdvance:8,readValueFromPointer:ue,destructorFunction:function(f){N(f)}})}function En(t,e,r,n,a,o){we[t]={name:k(e),rawConstructor:M(r,n),rawDestructor:M(a,o),fields:[]}}function Cn(t,e,r,n,a,o,u,s,f,c){we[t].fields.push({fieldName:k(e),getterReturnType:r,getter:M(n,a),getterContext:o,setterArgumentType:u,setter:M(s,f),setterContext:c})}function Fn(t,e){e=k(e),z(t,{isVoid:!0,name:e,argPackAdvance:0,fromWireType:function(){},toWireType:function(r,n){}})}function Pn(){return Date.now()}function $n(t,e){var r=new Date(_[t>>2]*1e3);_[e>>2]=r.getSeconds(),_[e+4>>2]=r.getMinutes(),_[e+8>>2]=r.getHours(),_[e+12>>2]=r.getDate(),_[e+16>>2]=r.getMonth(),_[e+20>>2]=r.getFullYear()-1900,_[e+24>>2]=r.getDay();var n=new Date(r.getFullYear(),0,1),a=(r.getTime()-n.getTime())/(1e3*60*60*24)|0;_[e+28>>2]=a,_[e+36>>2]=-(r.getTimezoneOffset()*60);var o=new Date(r.getFullYear(),6,1).getTimezoneOffset(),u=n.getTimezoneOffset(),s=(o!=u&&r.getTimezoneOffset()==Math.min(u,o))|0;_[e+32>>2]=s}function Sn(t){var e=new Date(_[t+20>>2]+1900,_[t+16>>2],_[t+12>>2],_[t+8>>2],_[t+4>>2],_[t>>2],0),r=_[t+32>>2],n=e.getTimezoneOffset(),a=new Date(e.getFullYear(),0,1),o=new Date(e.getFullYear(),6,1).getTimezoneOffset(),u=a.getTimezoneOffset(),s=Math.min(u,o);if(r<0)_[t+32>>2]=+(o!=u&&s==n);else if(r>0!=(s==n)){var f=Math.max(u,o),c=r>0?s:f;e.setTime(e.getTime()+(c-n)*6e4)}_[t+24>>2]=e.getDay();var d=(e.getTime()-a.getTime())/(1e3*60*60*24)|0;return _[t+28>>2]=d,_[t>>2]=e.getSeconds(),_[t+4>>2]=e.getMinutes(),_[t+8>>2]=e.getHours(),_[t+12>>2]=e.getDate(),_[t+16>>2]=e.getMonth(),e.getTime()/1e3|0}function Dn(t,e,r){var n=new Date().getFullYear(),a=new Date(n,0,1),o=new Date(n,6,1),u=a.getTimezoneOffset(),s=o.getTimezoneOffset(),f=Math.max(u,s);_[t>>2]=f*60,_[e>>2]=+(u!=s);function c(C){var F=C.toTimeString().match(/\(([A-Za-z ]+)\)$/);return F?F[1]:"GMT"}var d=c(a),p=c(o),g=it(d),R=it(p);s<u?(m[r>>2]=g,m[r+4>>2]=R):(m[r>>2]=R,m[r+4>>2]=g)}function Ye(t,e,r){Ye.called||(Ye.called=!0,Dn(t,e,r))}function kn(){se("")}function On(t,e,r){O.copyWithin(t,e,e+r)}function xn(){return 2147483648}function jn(t){try{return ge.grow(t-ke.byteLength+65535>>>16),st(ge.buffer),1}catch{}}function Un(t){var e=O.length;t=t>>>0;var r=xn();if(t>r)return!1;let n=(f,c)=>f+(c-f%c)%c;for(var a=1;a<=4;a*=2){var o=e*(1+.2/a);o=Math.min(o,t+100663296);var u=Math.min(r,n(Math.max(t,o),65536)),s=jn(u);if(s)return!0}return!1}var qe={};function Wn(){return U||"./this.program"}function pe(){if(!pe.strings){var t=(typeof navigator=="object"&&navigator.languages&&navigator.languages[0]||"C").replace("-","_")+".UTF-8",e={USER:"web_user",LOGNAME:"web_user",PATH:"/",PWD:"/",HOME:"/home/web_user",LANG:t,_:Wn()};for(var r in qe)qe[r]===void 0?delete e[r]:e[r]=qe[r];var n=[];for(var r in e)n.push(r+"="+e[r]);pe.strings=n}return pe.strings}function Hn(t,e){var r=0;return pe().forEach(function(n,a){var o=e+r;m[t+a*4>>2]=o,rr(n,o),r+=n.length+1}),0}function Mn(t,e){var r=pe();m[t>>2]=r.length;var n=0;return r.forEach(function(a){n+=a.length+1}),m[e>>2]=n,0}function In(){return Gt()}function Nn(t,e){return i.extractor.close((t>>>0)+e*4294967296)}function Ln(t){let e=i.extractor.create(De(t));return i.setTempRet0(e/4294967296|0),e%4294967296}function Vn(t){let e=i.extractor.open(De(t));return i.setTempRet0(e/4294967296|0),e%4294967296}function zn(t,e,r,n){return i.extractor.read((t>>>0)+e*4294967296,r,n)}function Bn(t,e,r,n,a){return i.extractor.seek((t>>>0)+e*4294967296,(r>>>0)+n*4294967296,Se(a))}function Gn(t,e){let r=i.extractor.tell((t>>>0)+e*4294967296);return i.setTempRet0(r/4294967296|0),r%4294967296}function Yn(t,e,r,n){return i.extractor.write((t>>>0)+e*4294967296,r,n)}function qn(t){return t}function Kn(t){S(t)}wt=i.InternalError=We(Error,"InternalError"),Dr(),re=i.BindingError=We(Error,"BindingError"),Yr(),Mr(),rn(),Ft=i.UnboundTypeError=We(Error,"UnboundTypeError"),_n();var Xn={p:vr,r:gr,t:mr,c:Rr,d:br,l:Ar,ea:gt,o:Tr,e:wr,V:Er,U:Cr,fa:$r,F:Sr,ca:kr,ia:fn,ha:cn,w:dn,ba:gn,z:mn,q:Rn,j:bn,y:An,u:Tn,v:En,ga:Cn,da:Fn,Y:Pn,Z:$n,_:Sn,$:Ye,x:kn,aa:On,T:Un,W:Hn,X:Mn,a:In,b:ei,h:ti,g:ai,n:ii,E:oi,D:si,O:_i,Q:hi,A:ci,m:Qn,f:ri,i:ni,C:ui,ja:li,B:fi,k:di,P:vi,R:pi,M:gi,N:Nn,K:Ln,L:Vn,I:zn,H:Bn,G:Gn,J:Yn,s:qn,S:Kn},Ei=hr(),Zn=i.___wasm_call_ctors=function(){return(Zn=i.___wasm_call_ctors=i.asm.la).apply(null,arguments)},N=i._free=function(){return(N=i._free=i.asm.ma).apply(null,arguments)},he=i._malloc=function(){return(he=i._malloc=i.asm.na).apply(null,arguments)},St=i.___getTypeName=function(){return(St=i.___getTypeName=i.asm.pa).apply(null,arguments)},Jn=i.___embind_register_native_and_builtin_types=function(){return(Jn=i.___embind_register_native_and_builtin_types=i.asm.qa).apply(null,arguments)},w=i._setThrew=function(){return(w=i._setThrew=i.asm.ra).apply(null,arguments)},b=i.stackSave=function(){return(b=i.stackSave=i.asm.sa).apply(null,arguments)},A=i.stackRestore=function(){return(A=i.stackRestore=i.asm.ta).apply(null,arguments)},Te=i.___cxa_can_catch=function(){return(Te=i.___cxa_can_catch=i.asm.ua).apply(null,arguments)},Dt=i.___cxa_is_pointer_type=function(){return(Dt=i.___cxa_is_pointer_type=i.asm.va).apply(null,arguments)},kt=i.dynCall_viji=function(){return(kt=i.dynCall_viji=i.asm.wa).apply(null,arguments)},Ot=i.dynCall_ji=function(){return(Ot=i.dynCall_ji=i.asm.xa).apply(null,arguments)},xt=i.dynCall_vij=function(){return(xt=i.dynCall_vij=i.asm.ya).apply(null,arguments)},jt=i.dynCall_iiiiiijii=function(){return(jt=i.dynCall_iiiiiijii=i.asm.za).apply(null,arguments)},Ut=i.dynCall_vj=function(){return(Ut=i.dynCall_vj=i.asm.Aa).apply(null,arguments)};function Qn(t,e){var r=b();try{T(t)(e)}catch(n){if(A(r),n!==n+0)throw n;w(1,0)}}function ei(t,e){var r=b();try{return T(t)(e)}catch(n){if(A(r),n!==n+0)throw n;w(1,0)}}function ti(t,e,r){var n=b();try{return T(t)(e,r)}catch(a){if(A(n),a!==a+0)throw a;w(1,0)}}function ri(t,e,r){var n=b();try{T(t)(e,r)}catch(a){if(A(n),a!==a+0)throw a;w(1,0)}}function ni(t,e,r,n){var a=b();try{T(t)(e,r,n)}catch(o){if(A(a),o!==o+0)throw o;w(1,0)}}function ii(t,e,r,n,a){var o=b();try{return T(t)(e,r,n,a)}catch(u){if(A(o),u!==u+0)throw u;w(1,0)}}function ai(t,e,r,n){var a=b();try{return T(t)(e,r,n)}catch(o){if(A(a),o!==o+0)throw o;w(1,0)}}function oi(t,e,r,n,a,o,u){var s=b();try{return T(t)(e,r,n,a,o,u)}catch(f){if(A(s),f!==f+0)throw f;w(1,0)}}function si(t,e,r,n,a,o,u,s,f,c){var d=b();try{return T(t)(e,r,n,a,o,u,s,f,c)}catch(p){if(A(d),p!==p+0)throw p;w(1,0)}}function ui(t,e,r,n,a){var o=b();try{T(t)(e,r,n,a)}catch(u){if(A(o),u!==u+0)throw u;w(1,0)}}function fi(t,e,r,n,a,o,u,s,f,c){var d=b();try{T(t)(e,r,n,a,o,u,s,f,c)}catch(p){if(A(d),p!==p+0)throw p;w(1,0)}}function ci(t){var e=b();try{T(t)()}catch(r){if(A(e),r!==r+0)throw r;w(1,0)}}function li(t,e,r,n,a,o){var u=b();try{T(t)(e,r,n,a,o)}catch(s){if(A(u),s!==s+0)throw s;w(1,0)}}function di(t,e,r,n,a,o,u,s,f,c,d){var p=b();try{T(t)(e,r,n,a,o,u,s,f,c,d)}catch(g){if(A(p),g!==g+0)throw g;w(1,0)}}function pi(t,e,r,n,a){var o=b();try{kt(t,e,r,n,a)}catch(u){if(A(o),u!==u+0)throw u;w(1,0)}}function hi(t,e){var r=b();try{return Ot(t,e)}catch(n){if(A(r),n!==n+0)throw n;w(1,0)}}function vi(t,e,r,n){var a=b();try{xt(t,e,r,n)}catch(o){if(A(a),o!==o+0)throw o;w(1,0)}}function _i(t,e,r,n,a,o,u,s,f,c){var d=b();try{return jt(t,e,r,n,a,o,u,s,f,c)}catch(p){if(A(d),p!==p+0)throw p;w(1,0)}}function gi(t,e,r){var n=b();try{Ut(t,e,r)}catch(a){if(A(n),a!==a+0)throw a;w(1,0)}}i.setTempRet0=S;var Ee;oe=function t(){Ee||Ke(),Ee||(oe=t)};function Ke(t){if(t=t||V,q>0||(ir(),q>0))return;function e(){Ee||(Ee=!0,i.calledRun=!0,!Qe&&(ar(),h(i),i.onRuntimeInitialized&&i.onRuntimeInitialized(),or()))}i.setStatus?(i.setStatus("Running..."),setTimeout(function(){setTimeout(function(){i.setStatus("")},1),e()},1)):e()}if(i.run=Ke,i.preInit)for(typeof i.preInit=="function"&&(i.preInit=[i.preInit]);i.preInit.length>0;)i.preInit.pop()();return Ke(),i.ready}})(),It=Ri;var Ze;async function Nt(j){return Ze||(Ze=await It(j)),Ze}async function Lt({wasmBinary:j,data:l,password:i=""}){let h=await Nt(j&&{wasmBinary:j}),v=new Fe(h,l,i);return h.extractor=v,v}window.UnrarLib={createExtractorFromData:Lt};})();
+</script>
+<script type="text/plain" id="rarWorkerSrc">
+// RAR cover work, off the main thread so scrolling stays smooth
+const IMG=/\.(jpe?g|png|gif|webp|avif|bmp)$/i, ARCH=/\.(zip|cbz|rar|cbr)$/i;
+let wasm=null, q=Promise.resolve();
+class SparseFile {
+  constructor(size, parts){ this.size=size; this.parts=parts; this.pos=0; }
+  read(n){
+    if(this.pos + n > this.size) return null;
+    const p = this.parts.find(q => this.pos >= q.off && this.pos < q.off + q.u8.length);
+    if(!p) return null;
+    const take = Math.min(n, p.off + p.u8.length - this.pos);
+    const out = p.u8.slice(this.pos - p.off, this.pos - p.off + take);
+    this.pos += take; return out;
+  }
+  readAll(){ return new Uint8Array(0); } write(){ return false; } tell(){ return this.pos; }
+  seek(pos, m){ const np = m==='SET' ? pos : m==='CUR' ? this.pos+pos : this.size-pos; if(np<0 || np>this.size) return false; this.pos=np; return true; }
+  flatten(){}
+}
+async function engine(size, parts){
+  const p0 = parts[0].u8;
+  const ex = await self.UnrarLib.createExtractorFromData({wasmBinary: wasm.slice(0), data: p0.buffer.slice(p0.byteOffset, p0.byteOffset+p0.byteLength)});
+  const known = parts.reduce((n,p)=>n+p.u8.length, 0);
+  if(size > known && ex.dataFiles && ex._filePath && ex.dataFiles[ex._filePath]) ex.dataFiles[ex._filePath].file = new SparseFile(size, parts);
+  return ex;
+}
+function partialOut(ex){
+  let best=null;
+  for(const [k,v] of Object.entries(ex.dataFiles||{})){
+    if(!k.startsWith('*Extracted*/') || !v.file) continue;
+    const u8 = v.file.readAll(); if(u8.length && (!best || u8.length > best.u8.length)) best = {name:k.slice(12).replace(/\\/g,'/'), u8};
+  }
+  return best;
+}
+const own = u => (u.byteOffset===0 && u.byteLength===u.buffer.byteLength) ? u : u.slice();
+async function peek(size, parts){
+  let vols=0; const sizes={};
+  try{ for(const h of (await engine(size, parts)).getFileList().fileHeaders){ if(!h.flags.directory){ sizes[h.name.replace(/\\/g,'/')]=h.unpSize; if(ARCH.test(h.name)) vols++; } } }catch(e){}
+  const ex = await engine(size, parts);
+  try{
+    for(const x of ex.extract({files:h=>!h.flags.directory && !h.flags.encrypted && (IMG.test(h.name) || ARCH.test(h.name))}).files){
+      if(!x.extraction) continue;
+      const nm = x.fileHeader.name.replace(/\\/g,'/');
+      if(IMG.test(nm)) return {image:{name:nm, u8:own(x.extraction)}, vols};
+      return {inner:{name:nm, u8:own(x.extraction), size:x.extraction.length, whole:true}, vols};
+    }
+  }catch(e){
+    const p = partialOut(ex);
+    if(p && ARCH.test(p.name)) return {inner:{name:p.name, u8:own(p.u8), size:sizes[p.name] || p.u8.length, whole:false}, vols};
+  }
+  throw new Error('表紙を取り出せませんでした');
+}
+onmessage = e => {
+  const m = e.data;
+  if(m.type==='init'){ wasm = m.wasm; return; }
+  q = q.then(()=>peek(m.size, m.parts)).then(
+    r => { const tr=[]; if(r.image) tr.push(r.image.u8.buffer); if(r.inner) tr.push(r.inner.u8.buffer); postMessage({id:m.id, ok:true, r}, tr); },
+    err => postMessage({id:m.id, ok:false, msg:String(err && err.message || err)}));
+};
 </script>
 <script>
 (() => {
@@ -611,8 +693,31 @@ const partialOut = ex => {
   }
   return best;
 };
-// first image, or the first inner archive (whole or only its start), from part of a RAR
+let rarW = null, rarWDead = false, wSeq = 0; const wWait = new Map();
+function rarWorker(){
+  if(rarW || rarWDead) return rarW;
+  try{
+    const src = ['self.window=self;\n', document.getElementById('unrarBundle').textContent, '\n', document.getElementById('rarWorkerSrc').textContent];
+    rarW = new Worker(URL.createObjectURL(new Blob(src, {type:'text/javascript'})));
+    rarW.onmessage = e => { const w = wWait.get(e.data.id); if(!w) return; wWait.delete(e.data.id); e.data.ok ? w.res(e.data.r) : w.rej(new Error(e.data.msg)); };
+    rarW.onerror = () => { rarWDead = true; try{ rarW.terminate(); }catch(_){} rarW = null; for(const w of wWait.values()) w.rej(Object.assign(new Error('worker'), {dead:true})); wWait.clear(); };
+    rarW.postMessage({type:'init', wasm: unrarWasm()});
+  }catch(e){ rarWDead = true; rarW = null; }
+  return rarW;
+}
 async function rarPeek(size, parts){
+  const w = rarWorker();
+  if(w){
+    try{
+      const r = await new Promise((res, rej)=>{ const id = ++wSeq; wWait.set(id, {res, rej}); w.postMessage({type:'peek', id, size, parts}); });
+      if(r.image) return {image:new Blob([r.image.u8], {type:mimeOf(r.image.name)}), vols:r.vols};
+      return r;
+    }catch(e){ if(!e.dead) throw e; }
+  }
+  return rarPeekMain(size, parts);
+}
+// first image, or the first inner archive (whole or only its start), from part of a RAR
+async function rarPeekMain(size, parts){
   return withRar(async()=>{
     let vols = 0, sizes = {};
     try{ for(const h of (await rarEngineSparse(size, parts)).getFileList().fileHeaders){ if(!h.flags.directory){ sizes[h.name.replace(/\\/g,'/')] = h.unpSize; if(ARCH.test(h.name)) vols++; } } }catch(e){}
@@ -631,8 +736,7 @@ async function rarPeek(size, parts){
     throw new Error('表紙を取り出せませんでした');
   });
 }
-async function rarHeadParts(file){
-  const HEAD = 8*1024*1024, TAIL = 1024*1024;
+async function rarHeadParts(file, HEAD=8*1024*1024, TAIL=1024*1024){
   const headLen = Math.min(file.size, HEAD);
   const tailOff = Math.max(headLen, file.size - TAIL);
   const [head, tail] = await Promise.all([
@@ -819,9 +923,17 @@ async function peekCover(file, depth=0){
     throw new Error('画像なし');
   }
   if(kind==='rar'){
-    const r = await rarPeek(file.size, await rarHeadParts(file));
-    if(r.image) return {blob:r.image, vols:0};
-    return {blob: await innerCover(r.inner), vols: r.vols>1 ? r.vols : 0};
+    // most covers sit in the first 2MB; only fetch more when that is not enough
+    const tries = [[2*1024*1024, 256*1024], [8*1024*1024, 1024*1024]];
+    let last;
+    for(const [H, T] of tries){
+      try{
+        const r = await rarPeek(file.size, await rarHeadParts(file, H, T));
+        if(r.image) return {blob:r.image, vols:0};
+        return {blob: await innerCover(r.inner), vols: r.vols>1 ? r.vols : 0};
+      }catch(e){ if(e instanceof LoginNeeded) throw e; last = e; if(file.size <= H + T) break; }
+    }
+    throw last;
   }
   throw new Error('未対応');
 }
@@ -837,7 +949,9 @@ let sampleBook = null;
 const newId = () => 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 
 async function coverFrom(blob){
-  const bmp = await createImageBitmap(blob);
+  let bmp;
+  try{ bmp = await createImageBitmap(blob, {resizeWidth: 720, resizeQuality: 'medium'}); }   // decode small: far less memory on phones
+  catch(e){ bmp = await createImageBitmap(blob); }
   let sx=0, sw=bmp.width; const sh=bmp.height;
   if(bmp.width > bmp.height*1.2){ sw = Math.round(bmp.width/2); sx = bmp.width - sw; } // wraparound cover: keep the front (right) half
   const W = 360, H = Math.round(sh * W / sw);
@@ -977,10 +1091,11 @@ function setCover(el, url, ph, busy){
   if(url){ const im=document.createElement('img'); im.src=url; im.alt=''; im.loading='lazy'; cv.prepend(im); }
   else { const d=document.createElement('div'); d.className='ph'+(busy?' busy':''); d.textContent=ph; cv.prepend(d); }
 }
-function buildCard({title, coverUrl, badge, prog, sub, placeholder, busy}){
+function buildCard({title, coverUrl, badge, prog, sub, placeholder, busy, done}){
   const el = document.createElement('button'); el.type='button'; el.className='card';
-  el.innerHTML = `<div class="cover"></div><div class="ctitle"></div><div class="csub"></div>`;
+  el.innerHTML = `<div class="cover"></div><div class="crow"><span class="tag"></span><div class="ctext"><div class="ctitle"></div><div class="csub"></div></div></div>`;
   el.querySelector('.ctitle').textContent = title;
+  const tg = el.querySelector('.tag'); tg.textContent = badge || ''; if(done) tg.classList.add('done');
   setCover(el, coverUrl, placeholder || title, busy);
   if(badge){ const bd=document.createElement('span'); bd.className='badge'; bd.textContent=badge; el.querySelector('.cover').appendChild(bd); }
   if(prog){ const pr=document.createElement('div'); pr.className='prog'; pr.innerHTML=`<i style="width:${prog.pct}%"></i>`; el.querySelector('.cover').appendChild(pr); }
@@ -997,13 +1112,13 @@ function renderShelf(){
            : sort==='added' ? (a,b)=>b.added-a.added
            : (a,b)=>(b.lastRead||0)-(a.lastRead||0) || b.added-a.added);
   if(!books.size && sampleBook) list = [sampleBook];
-  const g = $('shelf'); g.innerHTML='';
+  const g = $('shelf'); g.innerHTML=''; g.classList.toggle('list', listView('lib'));
   for(const b of list){
     const pi = progressInfo(b.lastPage, b.pages, b.opened);
-    const el = buildCard({title:b.title, coverUrl: b.kind==='sample' ? b.cover : coverURL.get(b.id), badge:KIND_LABEL[b.kind], prog:pi,
+    const el = buildCard({title:b.title, coverUrl: b.kind==='sample' ? b.cover : coverURL.get(b.id), badge:KIND_LABEL[b.kind], prog:pi, done: pi && pi.pct>=100,
       sub: b.kind==='sample' ? '見本・9ページ' : pi ? pi.text : `未読・${b.pages}ページ・${fmtBytes(b.bytes||0)}`});
     el.dataset.id = b.id;
-    if(b.kind!=='sample'){ const d=document.createElement('div'); d.className='del'; d.textContent='タップで削除'; el.querySelector('.cover').appendChild(d); }
+    if(b.kind!=='sample'){ const d=document.createElement('div'); d.className='del'; d.textContent='タップで削除'; (listView('lib') ? el : el.querySelector('.cover')).appendChild(d); }
     el.onclick = ()=>{
       if(document.body.classList.contains('editing') && b.kind!=='sample'){
         if(el.classList.contains('armed')) deleteBook(b.id);
@@ -1036,11 +1151,30 @@ function setTab(t){
   tab = t;
   $('tabLib').setAttribute('aria-selected', String(t==='lib')); $('tabDrive').setAttribute('aria-selected', String(t==='drive'));
   $('libView').hidden = t!=='lib'; $('driveView').hidden = t!=='drive';
-  $('sort').hidden = t!=='lib'; $('editBtn').hidden = t!=='lib';
+  $('sort').hidden = t!=='lib'; $('dsort').hidden = t!=='drive'; $('editBtn').hidden = t!=='lib';
+  syncViewBtn();
   if(t==='drive'){ document.body.classList.remove('editing','x'); $('editBtn').setAttribute('aria-pressed','false'); Drive.prepare(); renderDrive(); }
   else renderShelf();
   pref.set('tab', t);
 }
+const listView = which => pref.get('view:'+which, 'grid')==='list';
+const ICON_GRID = '<rect x="4" y="4" width="6" height="8" rx="1"/><rect x="14" y="4" width="6" height="8" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/>';
+const ICON_LIST = '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h1M4 12h1M4 18h1"/>';
+function syncViewBtn(){
+  const list = listView(tab);
+  $('viewIcon').innerHTML = list ? ICON_LIST : ICON_GRID;
+  $('viewLbl').textContent = list ? '表紙なし' : '表紙あり';
+  $('viewBtn').setAttribute('aria-pressed', String(list));
+}
+$('viewBtn').onclick = ()=>{
+  const list = !listView(tab);
+  pref.set('view:'+tab, list ? 'list' : 'grid');
+  syncViewBtn();
+  if(tab==='drive'){ coverJobs.length = 0; renderDrive(); toast(list ? '表紙なしの一覧にしました。表紙を読み込まないので軽くなります' : '表紙ありに戻しました'); }
+  else { renderShelf(); toast(list ? '表紙なしの一覧にしました' : '表紙ありに戻しました'); }
+};
+$('dsort').value = pref.get('dsort', 'name');
+$('dsort').addEventListener('change', ()=>{ pref.set('dsort', $('dsort').value); renderDrive(); });
 $('tabLib').onclick = ()=>setTab('lib');
 $('tabDrive').onclick = ()=>setTab('drive');
 
@@ -1153,10 +1287,21 @@ function renderCrumbs(){
     c.append(b);
   });
 }
+function driveCmp(){
+  const s = $('dsort').value, byName = (a,b)=>coll.compare(a.name,b.name);
+  const t = f => Date.parse(f.modifiedTime||0) || 0;
+  if(s==='name-desc') return (a,b)=>byName(b,a);
+  if(s==='date-desc') return (a,b)=>t(b)-t(a) || byName(a,b);
+  if(s==='date-asc') return (a,b)=>t(a)-t(b) || byName(a,b);
+  return byName;
+}
+const fmtDate = s => { const d = new Date(s); return isNaN(d) ? '' : `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`; };
+let driveSeq = 0;
 async function renderDrive(err){
   if(tab!=='drive') return;
+  const seq = ++driveSeq;            // a newer call wins; an older one stops after its await
   renderCrumbs();
-  const g=$('dgrid'); g.innerHTML='';
+  const g=$('dgrid'); g.innerHTML=''; g.classList.toggle('list', listView('drive'));
   $('dLogin').hidden = true;
   if(framed){
     driveMsg(`<h2>この画面ではドライブにつなげません</h2>claude.ai の中で開いているため、Googleへのログインができません。「準備・設定」の手順でこのページを自分のサイト（GitHub Pages）に置くと、ドライブの中を表紙つきでのぞけるようになります。<br>今は <b>本を追加</b> から、ファイル選択画面のドライブを使って取り込めます。<br><button class="btn primary" type="button" data-open>準備・設定を見る</button>`);
@@ -1186,17 +1331,18 @@ async function renderDrive(err){
       items = await Drive.list(top.type==='shared' ? 'sharedWithMe=true and trashed=false' : `'${top.id}' in parents and trashed=false`);
       dirCache.set(key, items);
     }catch(e){
+      if(seq!==driveSeq) return;
       if(e instanceof LoginNeeded){ renderDrive(); return; }
       driveMsg(`<span class="warn">${esc(e.message)}</span>`); return;
     }
-    if(dstack[dstack.length-1]!==top || tab!=='drive') return;
+    if(seq!==driveSeq || dstack[dstack.length-1]!==top || tab!=='drive') return;
     driveMsg('');
   }
   const q = $('q').value.trim().toLowerCase();
   const match = n => !q || n.toLowerCase().includes(q);
-  const folders = items.filter(f=>(f.mimeType===FOLDER || (f.mimeType===SHORTCUT && f.shortcutDetails && f.shortcutDetails.targetMimeType===FOLDER)) && match(f.name))
-    .sort((a,b)=>coll.compare(a.name,b.name));
-  const arcs = items.filter(f=>f.mimeType!==FOLDER && f.mimeType!==SHORTCUT && ARCH.test(f.name) && match(f.name)).sort((a,b)=>coll.compare(a.name,b.name));
+  const cmp = driveCmp();
+  const folders = items.filter(f=>(f.mimeType===FOLDER || (f.mimeType===SHORTCUT && f.shortcutDetails && f.shortcutDetails.targetMimeType===FOLDER)) && match(f.name)).sort(cmp);
+  const arcs = items.filter(f=>f.mimeType!==FOLDER && f.mimeType!==SHORTCUT && ARCH.test(f.name) && match(f.name)).sort(cmp);
   const imgs = items.filter(f=>IMG.test(f.name) && f.mimeType!==SHORTCUT).sort((a,b)=>coll.compare(a.name,b.name));
   if(imgs.length>=2 && !q) g.appendChild(imageFolderCard(top, imgs));
   for(const f of folders) g.appendChild(folderCard(f));
@@ -1211,8 +1357,9 @@ function enterDrive(entry){ dstack.push(entry); try{ history.pushState({drive:ds
 
 function folderCard(f){
   const el = document.createElement('button'); el.type='button'; el.className='card';
-  el.innerHTML = `<div class="cover folder"><svg viewBox="0 0 64 52" fill="currentColor"><path d="M4 8a4 4 0 0 1 4-4h16l6 6h26a4 4 0 0 1 4 4v30a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z"/></svg><div class="fn"></div></div><div class="ctitle"></div><div class="csub">フォルダ</div>`;
+  el.innerHTML = `<div class="cover folder"><svg viewBox="0 0 64 52" fill="currentColor"><path d="M4 8a4 4 0 0 1 4-4h16l6 6h26a4 4 0 0 1 4 4v30a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z"/></svg><div class="fn"></div></div><div class="crow"><span class="tag dir">フォルダ</span><div class="ctext"><div class="ctitle"></div><div class="csub"></div></div></div>`;
   el.querySelector('.fn').textContent = f.name; el.querySelector('.ctitle').textContent = f.name;
+  el.querySelector('.csub').textContent = 'フォルダ' + (f.modifiedTime ? '・' + fmtDate(f.modifiedTime) : '');
   const id = f.mimeType===SHORTCUT ? f.shortcutDetails.targetId : f.id;
   el.onclick = ()=>enterDrive({type:'folder', id, name:f.name});
   return el;
@@ -1221,7 +1368,7 @@ function imageFolderCard(top, imgs){
   const key = 'dir:'+(top.id||'shared');
   const pos = remotePos.get(key); const pi = pos && progressInfo(pos.lastPage, pos.pages, true);
   const el = buildCard({title:`${top.name}（画像${imgs.length}枚）`, coverUrl:null, placeholder:'このフォルダの画像を本として読む', badge:'画像', prog:pi, sub: pi ? pi.text : 'タップで読む', busy:true});
-  lazyCover(el, 'dc:'+imgs[0].id+':'+imgs[0].modifiedTime, async()=>({blob: await Drive.media(imgs[0].id), vols:0}));
+  if(!listView('drive')) lazyCover(el, 'dc:'+imgs[0].id+':'+imgs[0].modifiedTime, async()=>({blob: await Drive.media(imgs[0].id), vols:0}));
   el.onclick = ()=>{
     beginLoad(top.name);
     const p = remotePos.get(key) || {};
@@ -1239,29 +1386,28 @@ function saveButton(src, name, get){
   return b;
 }
 function refreshDriveSaved(){ document.querySelectorAll('#dgrid .save').forEach(b=>b._mark && b._mark()); }
-function withSaveRow(el, saveBtn){
-  const t = el.querySelector('.ctitle'), s = el.querySelector('.csub');
-  const row=document.createElement('div'); row.className='crow'; const tx=document.createElement('div'); tx.className='ctext';
-  t.replaceWith(row); tx.append(t, s); row.append(tx, saveBtn);
-}
+function withSaveRow(el, saveBtn){ el.querySelector('.crow').append(saveBtn); }
 function driveArcCard(f){
   const key = 'f:'+f.id;
   const pos = remotePos.get(key); const pi = pos && progressInfo(pos.lastPage, pos.pages, true);
-  const el = buildCard({title:titleOf(f.name), coverUrl:null, badge: RAR.test(f.name) ? 'RAR' : 'ZIP', prog:pi, sub: (pi ? pi.text+'・' : '') + fmtBytes(Number(f.size||0)), busy:true});
+  const el = buildCard({title:titleOf(f.name), coverUrl:null, badge: RAR.test(f.name) ? 'RAR' : 'ZIP', prog:pi, done: pi && pi.pct>=100,
+    sub: (pi ? pi.text+'・' : '') + fmtBytes(Number(f.size||0)) + (f.modifiedTime ? '・' + fmtDate(f.modifiedTime) : ''), busy:!listView('drive')});
   const ck = 'dc:'+f.id+':'+f.modifiedTime;
-  lazyCover(el, ck, ()=>peekCover(Drive.file(f)));
+  if(!listView('drive')) lazyCover(el, ck, ()=>peekCover(Drive.file(f)));
   withSaveRow(el, saveButton('drive:'+f.id, f.name, async()=>Drive.file(f)));
   el.onclick = ()=>openDriveArchive({name:f.name, key, ck, open: async()=>Drive.file(f), src:'drive:'+f.id});
   return el;
 }
 function renderArcItems(top){
   const g=$('dgrid');
-  top.vols.forEach(v=>{
+  const s = $('dsort').value;
+  const vols = [...top.vols].sort((a,b)=>coll.compare(baseName(a.name), baseName(b.name)) * (s==='name-desc' ? -1 : 1));
+  vols.forEach(v=>{
     const key = top.key+'#'+v.name;
     const pos = remotePos.get(key); const pi = pos && progressInfo(pos.lastPage, pos.pages, true);
-    const el = buildCard({title:titleOf(v.name), coverUrl:null, badge: RAR.test(v.name)?'RAR':'ZIP', prog:pi, sub: (pi ? pi.text+'・' : '') + fmtBytes(v.size||0), busy:true});
+    const el = buildCard({title:titleOf(v.name), coverUrl:null, badge: RAR.test(v.name)?'RAR':'ZIP', prog:pi, done: pi && pi.pct>=100, sub: (pi ? pi.text+'・' : '') + fmtBytes(v.size||0), busy:!listView('drive')});
     const ck = top.ck+'#'+v.name;
-    lazyCover(el, ck, async()=>peekCover(await v.open()));
+    if(!listView('drive')) lazyCover(el, ck, async()=>peekCover(await v.open()));
     withSaveRow(el, saveButton(top.src+'#'+v.name, v.name, ()=>v.open()));
     el.onclick = ()=>openDriveArchive({name:v.name, key, ck, open:()=>v.open(), src:top.src+'#'+v.name});
     g.appendChild(el);
@@ -1277,7 +1423,7 @@ function lazyCover(el, ck, compute){
   };
   const mem = dcover.get(ck); if(mem){ show(mem); return; }
   el._cover = {ck, compute, show};
-  if(!coverObs) coverObs = new IntersectionObserver(ents=>{ for(const en of ents) if(en.isIntersecting){ coverObs.unobserve(en.target); queueCover(en.target); } }, {root:$('shelfScroll'), rootMargin:'400px'});
+  if(!coverObs) coverObs = new IntersectionObserver(ents=>{ for(const en of ents) if(en.isIntersecting){ coverObs.unobserve(en.target); queueCover(en.target); } }, {root:$('shelfScroll'), rootMargin:'250px'});
   coverObs.observe(el);
 }
 async function queueCover(el){
@@ -1287,7 +1433,7 @@ async function queueCover(el){
   coverJobs.push(el); pumpCovers();
 }
 function pumpCovers(){
-  while(coverRunning<3 && coverJobs.length){
+  while(coverRunning<2 && coverJobs.length){
     const el = coverJobs.shift(); if(!el.isConnected) continue;
     const {ck, compute, show} = el._cover;
     if(dcover.has(ck)){ show(dcover.get(ck)); continue; }
