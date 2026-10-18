@@ -576,11 +576,38 @@ async function loadAll(blob, onProgress){
   if(isBlob(blob)) return blob.arrayBuffer();
   return (await blob.toBlob(onProgress)).arrayBuffer();
 }
-// the first image from only the head of a RAR (works when that image is complete in the head)
+// The first image from only part of a RAR. RARs made by WinRAR usually carry "quick open"
+// data near the end that the engine reads first, so fetch the head and the tail and let the
+// engine see a file of the real size with the middle left blank.
+class SparseFile {
+  constructor(size, parts){ this.size=size; this.parts=parts; this.pos=0; }
+  read(n){
+    if(this.pos + n > this.size) return null;
+    const out = new Uint8Array(n);
+    for(const p of this.parts){
+      const s = Math.max(this.pos, p.off), e = Math.min(this.pos+n, p.off+p.u8.length);
+      if(e > s) out.set(p.u8.subarray(s-p.off, e-p.off), s-this.pos);
+    }
+    this.pos += n; return out;
+  }
+  readAll(){ return new Uint8Array(0); }
+  write(){ return false; }
+  tell(){ return this.pos; }
+  seek(pos, method){ const np = method==='SET' ? pos : method==='CUR' ? this.pos+pos : this.size-pos; if(np<0 || np>this.size) return false; this.pos=np; return true; }
+  flatten(){}
+}
 async function rarHeadImage(file){
-  const data = await file.slice(0, Math.min(file.size, 8*1024*1024)).arrayBuffer();
+  const HEAD = 8*1024*1024, TAIL = 1024*1024;
+  const headLen = Math.min(file.size, HEAD);
+  const tailOff = Math.max(headLen, file.size - TAIL);
+  const [head, tail] = await Promise.all([
+    file.slice(0, headLen).arrayBuffer(),
+    tailOff < file.size ? file.slice(tailOff, file.size).arrayBuffer() : Promise.resolve(new ArrayBuffer(0))
+  ]);
   return withRar(async()=>{
-    const ex = await rarEngine(data);
+    const ex = await rarEngine(head);
+    if(file.size > headLen && ex.dataFiles && ex._filePath && ex.dataFiles[ex._filePath])
+      ex.dataFiles[ex._filePath].file = new SparseFile(file.size, [{off:0, u8:new Uint8Array(head)}, {off:tailOff, u8:new Uint8Array(tail)}]);
     try{ for(const x of ex.extract({files:h=>IMG.test(h.name) && !h.flags.encrypted}).files){ if(x.extraction) return new Blob([x.extraction], {type:mimeOf(x.fileHeader.name)}); } }
     catch(e){}
     throw new Error('表紙を取り出せませんでした');
@@ -1030,6 +1057,10 @@ async function renderDrive(err){
     driveMsg(`<h2>この画面ではドライブにつなげません</h2>claude.ai の中で開いているため、Googleへのログインができません。「準備・設定」の手順でこのページを自分のサイト（GitHub Pages）に置くと、ドライブの中を表紙つきでのぞけるようになります。<br>今は <b>本を追加</b> から、ファイル選択画面のドライブを使って取り込めます。<br><button class="btn primary" type="button" data-open>準備・設定を見る</button>`);
     return;
   }
+  if(location.protocol!=='https:' && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)){
+    driveMsg(`<h2>このページはファイルとして開かれています</h2>アドレスが <code>${esc(location.protocol)}//…</code> で始まっているため、Googleがログインを受け付けません（エラー400 invalid_request になります）。GitHub Pages のアドレス <code>https://ユーザー名.github.io/manga/</code> を開き直してください。<br><button class="btn primary" type="button" data-open>準備・設定を見る</button>`);
+    return;
+  }
   if(!Drive.clientId()){
     driveMsg(`<h2>ドライブにつなぐ準備をしましょう</h2>最初に一度だけ、Googleの「クライアントID」を作って登録します。手順は「準備・設定」にあります。<br><button class="btn primary" type="button" data-open>準備・設定を開く</button>`);
     return;
@@ -1147,7 +1178,7 @@ function lazyCover(el, ck, compute){
 async function queueCover(el){
   const {ck, show} = el._cover;
   const saved = await DB.get('covers', ck);
-  if(saved){ const c = saved.fail ? {fail:true} : {url:URL.createObjectURL(saved.cover), vols:saved.vols||0}; dcover.set(ck, c); show(c); return; }
+  if(saved && !(saved.fail && saved.v!==2)){ const c = saved.fail ? {fail:true} : {url:URL.createObjectURL(saved.cover), vols:saved.vols||0}; dcover.set(ck, c); show(c); return; }
   coverJobs.push(el); pumpCovers();
 }
 function pumpCovers(){
@@ -1164,7 +1195,7 @@ function pumpCovers(){
         dcover.set(ck, c); DB.put('covers', {cover:small, vols:c.vols}, ck).catch(()=>{}); show(c);
       }catch(e){
         if(e instanceof LoginNeeded){ show(null); return; }
-        const c={fail:true}; dcover.set(ck, c); DB.put('covers', c, ck).catch(()=>{}); show(c);
+        const c={fail:true, v:2}; dcover.set(ck, c); DB.put('covers', c, ck).catch(()=>{}); show(c);
       }
     })().finally(()=>{ coverRunning--; pumpCovers(); });
   }
