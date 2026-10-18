@@ -576,19 +576,19 @@ async function loadAll(blob, onProgress){
   if(isBlob(blob)) return blob.arrayBuffer();
   return (await blob.toBlob(onProgress)).arrayBuffer();
 }
-// The first image from only part of a RAR. RARs made by WinRAR usually carry "quick open"
-// data near the end that the engine reads first, so fetch the head and the tail and let the
-// engine see a file of the real size with the middle left blank.
+// Reading only part of a RAR. RARs made by WinRAR usually carry "quick open" data near the
+// end that the engine reads first, so the head and the tail are fetched and the engine sees a
+// file of the real size. Reads that run into the missing middle stop there, so whatever was
+// unpacked up to that point (for a RAR inside a RAR: the start of the inner archive) is kept.
 class SparseFile {
   constructor(size, parts){ this.size=size; this.parts=parts; this.pos=0; }
   read(n){
     if(this.pos + n > this.size) return null;
-    const out = new Uint8Array(n);
-    for(const p of this.parts){
-      const s = Math.max(this.pos, p.off), e = Math.min(this.pos+n, p.off+p.u8.length);
-      if(e > s) out.set(p.u8.subarray(s-p.off, e-p.off), s-this.pos);
-    }
-    this.pos += n; return out;
+    const p = this.parts.find(q => this.pos >= q.off && this.pos < q.off + q.u8.length);
+    if(!p) return null;                                   // inside the part we did not fetch
+    const take = Math.min(n, p.off + p.u8.length - this.pos);
+    const out = p.u8.slice(this.pos - p.off, this.pos - p.off + take);
+    this.pos += take; return out;
   }
   readAll(){ return new Uint8Array(0); }
   write(){ return false; }
@@ -596,7 +596,42 @@ class SparseFile {
   seek(pos, method){ const np = method==='SET' ? pos : method==='CUR' ? this.pos+pos : this.size-pos; if(np<0 || np>this.size) return false; this.pos=np; return true; }
   flatten(){}
 }
-async function rarHeadImage(file){
+async function rarEngineSparse(size, parts){
+  const ex = await rarEngine(parts[0].u8.buffer.slice(parts[0].u8.byteOffset, parts[0].u8.byteOffset + parts[0].u8.byteLength));
+  const known = parts.reduce((n,p)=>n+p.u8.length, 0);
+  if(size > known && ex.dataFiles && ex._filePath && ex.dataFiles[ex._filePath]) ex.dataFiles[ex._filePath].file = new SparseFile(size, parts);
+  return ex;
+}
+const partialOut = ex => {
+  // the file the engine was writing when the data ran out
+  let best = null;
+  for(const [k, v] of Object.entries(ex.dataFiles || {})){
+    if(!k.startsWith('*Extracted*/') || !v.file) continue;
+    const u8 = v.file.readAll(); if(u8.length && (!best || u8.length > best.u8.length)) best = {name:k.slice(12).replace(/\\/g,'/'), u8};
+  }
+  return best;
+};
+// first image, or the first inner archive (whole or only its start), from part of a RAR
+async function rarPeek(size, parts){
+  return withRar(async()=>{
+    let vols = 0, sizes = {};
+    try{ for(const h of (await rarEngineSparse(size, parts)).getFileList().fileHeaders){ if(!h.flags.directory){ sizes[h.name.replace(/\\/g,'/')] = h.unpSize; if(ARCH.test(h.name)) vols++; } } }catch(e){}
+    const ex = await rarEngineSparse(size, parts);
+    try{
+      for(const x of ex.extract({files:h=>!h.flags.directory && !h.flags.encrypted && (IMG.test(h.name) || ARCH.test(h.name))}).files){
+        if(!x.extraction) continue;
+        const nm = x.fileHeader.name.replace(/\\/g,'/');
+        if(IMG.test(nm)) return {image:new Blob([x.extraction], {type:mimeOf(nm)}), vols};
+        return {inner:{name:nm, u8:x.extraction, size:x.extraction.length, whole:true}, vols};
+      }
+    }catch(e){
+      const p = partialOut(ex);
+      if(p && ARCH.test(p.name)) return {inner:{name:p.name, u8:p.u8, size:sizes[p.name] || p.u8.length, whole:false}, vols};
+    }
+    throw new Error('表紙を取り出せませんでした');
+  });
+}
+async function rarHeadParts(file){
   const HEAD = 8*1024*1024, TAIL = 1024*1024;
   const headLen = Math.min(file.size, HEAD);
   const tailOff = Math.max(headLen, file.size - TAIL);
@@ -604,14 +639,80 @@ async function rarHeadImage(file){
     file.slice(0, headLen).arrayBuffer(),
     tailOff < file.size ? file.slice(tailOff, file.size).arrayBuffer() : Promise.resolve(new ArrayBuffer(0))
   ]);
-  return withRar(async()=>{
-    const ex = await rarEngine(head);
-    if(file.size > headLen && ex.dataFiles && ex._filePath && ex.dataFiles[ex._filePath])
-      ex.dataFiles[ex._filePath].file = new SparseFile(file.size, [{off:0, u8:new Uint8Array(head)}, {off:tailOff, u8:new Uint8Array(tail)}]);
-    try{ for(const x of ex.extract({files:h=>IMG.test(h.name) && !h.flags.encrypted}).files){ if(x.extraction) return new Blob([x.extraction], {type:mimeOf(x.fileHeader.name)}); } }
-    catch(e){}
+  const parts = [{off:0, u8:new Uint8Array(head)}];
+  if(tail.byteLength) parts.push({off:tailOff, u8:new Uint8Array(tail)});
+  return parts;
+}
+// the first image from the start of a ZIP when its end (the directory) is missing
+async function zipHeadImage(u8){
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  let p = 0;
+  const utf8 = new TextDecoder('utf-8',{fatal:true}); let sjis; try{ sjis = new TextDecoder('shift_jis'); }catch(e){ sjis = new TextDecoder(); }
+  while(p + 30 <= u8.length && dv.getUint32(p,true) === 0x04034b50){
+    const flags = dv.getUint16(p+6,true), method = dv.getUint16(p+8,true), comp = dv.getUint32(p+18,true);
+    const nl = dv.getUint16(p+26,true), el = dv.getUint16(p+28,true);
+    const raw = u8.subarray(p+30, p+30+nl); let name; try{ name = utf8.decode(raw); }catch(e){ name = sjis.decode(raw); }
+    const start = p + 30 + nl + el;
+    if(IMG.test(name) && !SKIP.test(name) && !(flags & 1)){
+      const end = (flags & 8) && !comp ? u8.length : Math.min(u8.length, start + comp);
+      const data = u8.subarray(start, end);
+      if(method===0 && end-start===comp) return new Blob([data], {type:mimeOf(name)});
+      if(method===8 && typeof DecompressionStream!=='undefined'){
+        const rd = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
+        const chunks = []; try{ for(;;){ const {done, value} = await rd.read(); if(done) break; chunks.push(value); } }catch(e){}
+        if(chunks.length) return new Blob(chunks, {type:mimeOf(name)});
+      }
+      return null;
+    }
+    if((flags & 8) && !comp) return null;                     // size unknown: cannot skip ahead
+    p = start + comp;
+  }
+  return null;
+}
+// For an inner RAR whose end we do not have: turn off its "quick open" pointer so the engine
+// reads headers from the start instead of jumping to the missing end (RAR5 main header).
+const CRC_T = (()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c = c&1 ? 0xEDB88320^(c>>>1) : c>>>1; t[n]=c>>>0; } return t; })();
+const crc32 = u8 => { let c=0xFFFFFFFF; for(let i=0;i<u8.length;i++) c = CRC_T[(c^u8[i])&255]^(c>>>8); return (c^0xFFFFFFFF)>>>0; };
+function noQuickOpen(src){
+  const sig=[0x52,0x61,0x72,0x21,0x1a,0x07,0x01,0x00];
+  if(src.length < 20 || sig.some((b,i)=>src[i]!==b)) return src;
+  const u8 = src.slice();
+  const vint = p => { let v=0, s=0, c; do{ c=u8[p++]; v += (c&0x7f)*Math.pow(2,s); s+=7; }while(c&0x80 && p<u8.length); return [v,p]; };
+  try{
+    const crcAt = 8; let [hsize, p] = vint(crcAt+4); const hstart = crcAt+4, hend = p + hsize;
+    let type; [type, p] = vint(p); if(type!==1) return src;
+    let hflags; [hflags, p] = vint(p); if(!(hflags & 1)) return src;
+    let esize; [esize, p] = vint(p);
+    if(hflags & 2) [, p] = vint(p);
+    let aflags; [aflags, p] = vint(p); if(aflags & 2) [, p] = vint(p);
+    const eend = hend; let changed = false;
+    while(p < eend){
+      let rsize, q; [rsize, q] = vint(p); const rend = q + rsize;
+      let rtype, tp = q; [rtype, q] = vint(q);
+      if(rtype===1 && q-tp===1){ u8[tp] = 0x7e; changed = true; }   // unknown record type: skipped by the engine
+      p = rend;
+    }
+    if(!changed) return src;
+    const c = crc32(u8.subarray(hstart, hend));
+    u8[crcAt]=c&255; u8[crcAt+1]=(c>>>8)&255; u8[crcAt+2]=(c>>>16)&255; u8[crcAt+3]=(c>>>24)&255;
+    return u8;
+  }catch(e){ return src; }
+}
+async function innerCover(inner){
+  const u8 = inner.u8;
+  if(inner.whole) return (await peekCover(new Blob([u8]), 1)).blob;
+  if(u8[0]===0x52 && u8[1]===0x61 && u8[2]===0x72 && u8[3]===0x21){
+    const r = await rarPeek(inner.size, [{off:0, u8:noQuickOpen(u8)}]);
+    if(r.image) return r.image;
     throw new Error('表紙を取り出せませんでした');
-  });
+  }
+  if(u8[0]===0x50 && u8[1]===0x4b){ const b = await zipHeadImage(u8); if(b) return b; }
+  throw new Error('表紙を取り出せませんでした');
+}
+async function rarHeadImage(file){
+  const r = await rarPeek(file.size, await rarHeadParts(file));
+  if(r.image) return r.image;
+  throw new Error('表紙を取り出せませんでした');
 }
 // a whole RAR in memory (for reading straight from Drive)
 async function rarPagesInMemory(file, onStep){
@@ -717,7 +818,11 @@ async function peekCover(file, depth=0){
     }
     throw new Error('画像なし');
   }
-  if(kind==='rar') return {blob: await rarHeadImage(file), vols:0};
+  if(kind==='rar'){
+    const r = await rarPeek(file.size, await rarHeadParts(file));
+    if(r.image) return {blob:r.image, vols:0};
+    return {blob: await innerCover(r.inner), vols: r.vols>1 ? r.vols : 0};
+  }
   throw new Error('未対応');
 }
 /* PIPELINE_END */
@@ -1178,7 +1283,7 @@ function lazyCover(el, ck, compute){
 async function queueCover(el){
   const {ck, show} = el._cover;
   const saved = await DB.get('covers', ck);
-  if(saved && !(saved.fail && saved.v!==2)){ const c = saved.fail ? {fail:true} : {url:URL.createObjectURL(saved.cover), vols:saved.vols||0}; dcover.set(ck, c); show(c); return; }
+  if(saved && !(saved.fail && saved.v!==3)){ const c = saved.fail ? {fail:true} : {url:URL.createObjectURL(saved.cover), vols:saved.vols||0}; dcover.set(ck, c); show(c); return; }
   coverJobs.push(el); pumpCovers();
 }
 function pumpCovers(){
@@ -1195,7 +1300,7 @@ function pumpCovers(){
         dcover.set(ck, c); DB.put('covers', {cover:small, vols:c.vols}, ck).catch(()=>{}); show(c);
       }catch(e){
         if(e instanceof LoginNeeded){ show(null); return; }
-        const c={fail:true, v:2}; dcover.set(ck, c); DB.put('covers', c, ck).catch(()=>{}); show(c);
+        const c={fail:true, v:3}; dcover.set(ck, c); DB.put('covers', c, ck).catch(()=>{}); show(c);
       }
     })().finally(()=>{ coverRunning--; pumpCovers(); });
   }
