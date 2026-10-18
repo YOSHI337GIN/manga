@@ -143,6 +143,13 @@ body.editing #libView .shelf.list .card > .del{display:flex}
 .curl img{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;display:block;pointer-events:none}
 .curl img:not([src]){visibility:hidden}
 .cshade{position:absolute;inset:0;pointer-events:none}
+.cropper{position:fixed;inset:0;z-index:25;background:var(--ink);display:flex;flex-direction:column}
+.cropstage{flex:1;min-height:0;position:relative;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
+#cropImg{position:absolute;display:block;pointer-events:none;-webkit-user-drag:none}
+.cropframe{position:absolute;border:2px solid var(--accent);box-shadow:0 0 0 9999px rgba(0,0,0,.62);cursor:move;touch-action:none}
+.cropframe::before{content:"";position:absolute;inset:33.3% 0;border-block:1px dashed color-mix(in srgb, var(--accent) 55%, transparent);pointer-events:none}
+.cropframe .ch{position:absolute;right:-16px;bottom:-16px;width:32px;height:32px;border-radius:50%;background:var(--accent);border:3px solid var(--ink);cursor:nwse-resize}
+.cropper .bar.bottom{flex-wrap:wrap;justify-content:space-between}
 .edge-hint{position:absolute;top:50%;transform:translateY(-50%);font-size:var(--step--1);color:var(--muted);z-index:3;
   background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:6px 12px;opacity:0;transition:opacity .2s;pointer-events:none}
 .edge-hint.show{opacity:1}
@@ -267,6 +274,8 @@ kbd{font-family:inherit;background:var(--raise);border:1px solid var(--line);bor
     <div class="tools">
       <button class="btn" id="rSave" type="button" hidden title="本棚に保存してオフラインで読めるようにする">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span class="lbl">保存</span></button>
+      <button class="btn" id="coverBtn" type="button" title="このページの一部を表紙にする" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2v16h16"/><path d="M2 6h16v16"/></svg><span class="lbl">表紙</span></button>
       <button class="btn" id="thumbBtn" type="button" title="ページ一覧">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="6" height="7"/><rect x="14" y="4" width="6" height="7"/><rect x="4" y="14" width="6" height="7"/><rect x="14" y="14" width="6" height="7"/></svg><span class="lbl">一覧</span></button>
       <button class="btn" id="setBtn" type="button" title="表示設定">
@@ -294,7 +303,7 @@ kbd{font-family:inherit;background:var(--raise);border:1px solid var(--line);bor
 
 <div class="sheet-back" id="helpSheet" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
-    <div class="sheet-head"><h2 id="helpTitle">使い方</h2><button class="btn" data-close type="button">閉じる</button></div>
+    <div class="sheet-head"><h2 id="helpTitle">使い方 <span class="note" id="verHelp" style="font-weight:400"></span></h2><button class="btn" data-close type="button">閉じる</button></div>
     <div class="sheet-body settings">
       <div class="row"><h3>ドライブをのぞく</h3>
       <p class="note"><b>ドライブ</b> タブで、Googleドライブのフォルダを表紙つきで見られます。ZIPは目次と1枚目だけ、RARは先頭の数MBだけを取り寄せて表紙を作るので、大きなファイルでもすぐ並びます。タップすると保存せずにそのまま読めます（ZIPは読むページだけ取り寄せ、RARは全体をダウンロードしてから開きます）。<b>↓</b> で本棚に保存すると、ネットなしでも読めます。最初に一度だけ「準備・設定」が必要です。</p></div>
@@ -304,7 +313,10 @@ kbd{font-family:inherit;background:var(--raise);border:1px solid var(--line);bor
       <p class="note">ZIP・CBZ・RAR・CBR（RAR5も可）と、それらが入れ子になった <b>二重圧縮</b>。中に何冊分も入っているときは1冊ずつに分けて並べます。パスワード付き、分割RAR（part1, part2…）、7z には対応していません。</p></div>
       <div class="row"><h3>読むときの操作</h3>
       <p class="note">ページの端を指で押さえたまま動かすと、本のようにめくれます。半分を超えたところで離すか、勢いよく払うとめくれ、手前で離すと戻ります。左右のタップでもめくれます。<br>
-        中央タップでメニューの表示・非表示。2本指で広げると拡大、中央のダブルタップでも拡大。横向きにすると自動で見開き。Androidの「戻る」でひとつ前の画面へ。</p></div>
+        中央タップでメニューの表示・非表示。2本指で広げると拡大、中央のダブルタップでも拡大。横向きにすると自動で見開き。Androidの「戻る」でひとつ前の画面へ。<br>
+        2ページ分が1枚になった画像は、<b>設定</b> →「2ページに分ける」で1ページずつ読めます。</p></div>
+      <div class="row"><h3>表紙を差し替える</h3>
+      <p class="note">本を開いて、表紙にしたい場面のページで <b>表紙</b> ボタンを押します。枠を指で動かし、2本指か右下の丸で大きさを変えて「この範囲を表紙にする」。「元の表紙に戻す」でいつでも戻せます。</p></div>
       <div class="row"><h3>保存について</h3>
       <p class="note">本棚の本はこのページ用の保存領域（Chromeのサイトデータ）に入り、元のファイルとほぼ同じ容量を使います。Chromeで「サイトデータ」を削除すると消えます（ドライブの元ファイルは残ります）。いらない本は <b>整理</b> から削除できます。</p></div>
     </div>
@@ -363,6 +375,12 @@ kbd{font-family:inherit;background:var(--raise);border:1px solid var(--line);bor
           <button type="button" data-v="curl">本のようにめくる</button>
           <button type="button" data-v="none">すぐ切り替える</button>
         </div></div>
+      <div class="row"><h3>見開き1枚の画像（横長の画像）</h3>
+        <div class="seg" data-key="split">
+          <button type="button" data-v="off">そのまま1枚で表示</button>
+          <button type="button" data-v="on">2ページに分ける</button>
+        </div>
+        <p class="note">「2ページに分ける」にすると、2ページ分が1枚になった画像を真ん中で切って、1ページずつ読めます。横向きの見開き表示では、分けた2ページを左右に並べます。</p></div>
       <div class="row"><h3>綴じ方向</h3>
         <div class="seg" data-key="dir">
           <button type="button" data-v="rtl">右綴じ（日本の漫画）</button>
@@ -379,6 +397,22 @@ kbd{font-family:inherit;background:var(--raise);border:1px solid var(--line);bor
       <p class="note">キーボード：<kbd>←</kbd><kbd>→</kbd> ページ送り　<kbd>Space</kbd> 次へ　<kbd>Esc</kbd> 戻る　<kbd>F</kbd> 全画面</p>
     </div>
   </div>
+</div>
+
+<div class="cropper" id="cropper" hidden role="dialog" aria-modal="true" aria-labelledby="cropTitle">
+  <header class="bar top">
+    <div class="book"><div class="book-title" id="cropTitle">表紙にする範囲を選ぶ</div>
+      <div class="book-meta">枠を指で動かす・2本指か右下の丸で大きさを変える</div></div>
+    <div class="tools">
+      <button class="btn" id="cropCancel" type="button">やめる</button>
+      <button class="btn primary" id="cropOk" type="button">この範囲を表紙にする</button>
+    </div>
+  </header>
+  <div class="cropstage" id="cropStage"><img id="cropImg" alt="表紙に使うページ"><div class="cropframe" id="cropFrame"><span class="ch"></span></div></div>
+  <footer class="bar bottom">
+    <div class="seg" id="cropPick"></div>
+    <button class="btn" id="cropReset" type="button">元の表紙に戻す</button>
+  </footer>
 </div>
 
 <div class="drop" id="drop" hidden><p>ここにドロップして本棚に取り込む</p></div>
@@ -464,6 +498,7 @@ onmessage = e => {
 </script>
 <script>
 (() => {
+const APP_VERSION = '2026.10.19-3';
 const $ = id => document.getElementById(id);
 const IMG = /\.(jpe?g|png|gif|webp|avif|bmp)$/i;
 const ARCH = /\.(zip|cbz|rar|cbr)$/i;
@@ -1073,6 +1108,7 @@ $('fileIn').onchange = e=>{ const fs=[...e.target.files]; e.target.value=''; if(
 async function updateMeta(){
   const row = $('metaRow'); row.innerHTML='';
   const s1 = document.createElement('span'); s1.textContent = books.size ? `${books.size}冊` : ''; row.appendChild(s1);
+  const sv = document.createElement('span'); sv.textContent = `版 ${APP_VERSION}`; sv.style.marginLeft = 'auto'; row.appendChild(sv);
   try{
     const e = await navigator.storage.estimate();
     const s2 = document.createElement('span');
@@ -1372,7 +1408,7 @@ function imageFolderCard(top, imgs){
   el.onclick = ()=>{
     beginLoad(top.name);
     const p = remotePos.get(key) || {};
-    startReading(top.name, imgs.map(f=>({name:f.name, getBlob:()=>Drive.media(f.id)})), {kind:'remote', key, title:top.name, lastPage:p.lastPage||0}, `ドライブ・画像${imgs.length}枚`, null);
+    startReading(top.name, imgs.map(f=>({name:f.name, getBlob:()=>Drive.media(f.id)})), {kind:'remote', key, title:top.name, lastPage:p.lastPage||0}, `ドライブ・画像${imgs.length}枚`, {ck:'dc:'+imgs[0].id+':'+imgs[0].modifiedTime});
   };
   return el;
 }
@@ -1521,7 +1557,7 @@ $('copyOrigin').onclick = ()=>{
 const stage = $('stage');
 const S = { title:'', book:null, item:null, pages:[], spreads:[], idx:0,
   dir: pref.get('dir','rtl'), mode: pref.get('mode','auto'), flip: pref.get('flip', reduceMotion() ? 'none' : 'curl'),
-  coverSolo: pref.get('coverSolo', true), shiftOne:false };
+  coverSolo: pref.get('coverSolo', true), shiftOne:false, split: pref.get('split','off'), entries:null, coverTarget:null };
 let readerToken = 0;
 let F = null;                    // page leaf currently turning
 let gridObs = null, thumbURLs = [];
@@ -1543,6 +1579,7 @@ function showReader(){
 }
 function closeReader(fromHistory, keepHistory){
   if($('reader').hidden) return;
+  if(!$('cropper').hidden){ $('cropper').hidden = true; if(CR.url){ URL.revokeObjectURL(CR.url); CR.url = null; } }
   readerToken++;
   if(F){ cancelAnimationFrame(F.raf); F=null; }
   S.pages.forEach(p=>p.url && URL.revokeObjectURL(p.url));
@@ -1555,9 +1592,13 @@ function closeReader(fromHistory, keepHistory){
   if(!importing) wake(false);
   if(tab==='lib') renderShelf(); else renderDrive();
   if(keepHistory){ try{ history.replaceState({}, ''); }catch(e){} }
-  else if(!fromHistory){ try{ if(history.state && history.state.reader) history.back(); }catch(e){} }
+  else if(!fromHistory){ try{ if(history.state && history.state.reader) quietBack(); }catch(e){} }
 }
+let ignorePop = 0;
+function quietBack(){ try{ ignorePop++; history.back(); setTimeout(()=>{ ignorePop = 0; }, 600); }catch(e){ ignorePop = 0; } }
 window.addEventListener('popstate', ()=>{
+  if(ignorePop){ ignorePop--; return; }
+  if(!$('cropper').hidden){ closeCropper(true); return; }
   const open = document.querySelector('.sheet-back:not([hidden])');
   if(open){ open.hidden = true; if(!$('reader').hidden){ try{ history.pushState({reader:1}, ''); }catch(e){} } return; }
   if(!$('reader').hidden){ closeReader(true); return; }
@@ -1592,9 +1633,45 @@ function beginLoad(title){
   const l=$('loading'); l.hidden=false; l.textContent='読み込み中…';
   return readerToken;
 }
+const makePages = entries => entries.map((e,k)=>({src:k, half:null, getBlob:e.getBlob, url:null, w:0, h:0, wide:false, p:null}));
+async function cropHalf(blob, side){
+  const bmp = await createImageBitmap(blob);
+  const w = Math.floor(bmp.width/2), sx = side==='R' ? bmp.width - w : 0;
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = bmp.height;
+  cv.getContext('2d').drawImage(bmp, sx, 0, w, bmp.height, 0, 0, w, bmp.height); bmp.close && bmp.close();
+  const out = await new Promise(r=>cv.toBlob(r, 'image/jpeg', 0.92)); cv.width = cv.height = 0;
+  return out;
+}
+function halfPages(pg){
+  // reading order: right half first for right-bound books
+  const first = S.dir==='rtl' ? 'R' : 'L', second = first==='R' ? 'L' : 'R';
+  const mk = (side, half) => ({src:pg.src, half, side, getBlob: async()=>cropHalf(await pg.getBlob(), side), url:null, w:0, h:0, wide:false, p:null});
+  return [mk(first,'a'), mk(second,'b')];
+}
+let splitT = 0;
+function scheduleSplit(){ if(splitT) return; splitT = setTimeout(()=>{ splitT = 0; if(F){ F.dirty = true; return; } applySplits(); }, 30); }
+function applySplits(){
+  if(!S.pages.some(p=>p.needSplit)) return false;
+  const cur = S.pages[curPage()];
+  const out = []; for(const p of S.pages) p.needSplit ? out.push(...halfPages(p)) : out.push(p);
+  S.pages = out;
+  let k = S.pages.indexOf(cur); if(k<0) k = Math.max(0, S.pages.findIndex(p=>cur && p.src===cur.src));
+  buildSpreads(k); buildGrid(); render();
+  return true;
+}
+function resetPages(){
+  if(!S.entries) return;
+  const cur = S.pages[curPage()], src = cur ? cur.src : 0;
+  if(F){ cancelAnimationFrame(F.raf); F = null; }
+  S.pages.forEach(p=>p.url && URL.revokeObjectURL(p.url));
+  S.pages = makePages(S.entries);
+  buildSpreads(src); buildGrid(); render();
+}
 function startReading(title, entries, book, meta, item){
   S.title = title; S.book = book; S.item = item; S.shiftOne=false; $('shiftOne').checked=false;
-  S.pages = entries.map(e=>({getBlob:e.getBlob, url:null, w:0, h:0, wide:false, p:null}));
+  S.entries = entries; S.pages = makePages(entries);
+  S.coverTarget = book && (book.kind==='zip' || book.kind==='pages') ? {type:'lib', id:book.id} : (item && item.ck ? {type:'drive', ck:item.ck} : null);
+  $('coverBtn').hidden = !S.coverTarget;
   $('bookMeta').textContent = meta;
   $('rSave').hidden = !(item && item.src && !savedSrc(item.src));
   document.title = title + ' – 見開き漫画ビューア';
@@ -1618,6 +1695,7 @@ function ensure(i){
     const d = await new Promise(r=>{ const im=new Image(); im.onload=()=>r({w:im.naturalWidth,h:im.naturalHeight}); im.onerror=()=>r(null); im.src=url; });
     if(!d){ URL.revokeObjectURL(url); throw new Error('bad image'); }
     if(tok!==readerToken){ URL.revokeObjectURL(url); return null; }
+    if(d.w > d.h*1.1 && S.split==='on' && !pg.half){ URL.revokeObjectURL(url); pg.needSplit = true; scheduleSplit(); return null; }
     pg.url=url; pg.w=d.w; pg.h=d.h;
     if(d.w > d.h*1.1 && !pg.wide){ pg.wide=true;
       if(effMode()==='spread'){ if(F) F.dirty=true; else { const cp=curPage(); const before=S.spreads.length; buildSpreads(cp); if(S.spreads.length!==before) render(); } } }
@@ -1643,8 +1721,10 @@ function buildSpreads(keepPage){
   else{
     let i=0, solo=(S.coverSolo?1:0)+(S.shiftOne?1:0);
     while(i<P.length){
+      // the two halves of one image always face each other
+      if(P[i].half==='a' && P[i+1] && P[i+1].half==='b' && P[i+1].src===P[i].src){ out.push([i,i+1]); i+=2; if(solo>0) solo--; continue; }
       if(solo>0 || P[i].wide){ out.push([i]); i++; if(solo>0) solo--; continue; }
-      if(i+1<P.length && !P[i+1].wide){ out.push([i,i+1]); i+=2; } else { out.push([i]); i++; }
+      if(i+1<P.length && !P[i+1].wide && P[i+1].half!=='a'){ out.push([i,i+1]); i+=2; } else { out.push([i]); i++; }
     }
   }
   S.spreads=out;
@@ -1687,9 +1767,10 @@ function render(){
 let posT;
 function savePos(p){
   const b = S.book; if(!b || b.kind==='sample') return;
-  b.lastPage = p; b.lastRead = Date.now(); b.opened = true;
+  const e = S.pages[p] ? S.pages[p].src : p, total = S.entries ? S.entries.length : S.pages.length;
+  b.lastPage = e; b.lastRead = Date.now(); b.opened = true;
   clearTimeout(posT);
-  if(b.kind==='remote'){ const rec={key:b.key, lastPage:p, pages:S.pages.length, lastRead:b.lastRead}; remotePos.set(b.key, rec); posT=setTimeout(()=>DB.put('remote', rec).catch(()=>{}), 400); }
+  if(b.kind==='remote'){ const rec={key:b.key, lastPage:e, pages:total, lastRead:b.lastRead}; remotePos.set(b.key, rec); posT=setTimeout(()=>DB.put('remote', rec).catch(()=>{}), 400); }
   else posT = setTimeout(()=>DB.put('books', b).catch(()=>{}), 400);
 }
 
@@ -1848,6 +1929,7 @@ function finishFlip(completed){
   cancelAnimationFrame(F.raf);
   if(completed && F.hasTarget) S.idx = F.target;
   const dirty = F.dirty; F = null;
+  if(dirty && applySplits()) return;
   if(dirty) buildSpreads(curPage());
   render();
 }
@@ -1969,6 +2051,7 @@ stage.addEventListener('wheel', e=>{ e.preventDefault(); if(e.ctrlKey){ const p=
 $('slider').addEventListener('input', e=>{ if(F){ cancelAnimationFrame(F.raf); F=null; } S.idx=+e.target.value; render(); });
 
 document.addEventListener('keydown', e=>{
+  if(!$('cropper').hidden){ if(e.key==='Escape') closeCropper(false); return; }
   const open = document.querySelector('.sheet-back:not([hidden])');
   if(e.key==='Escape'){ if(open){ open.hidden=true; return; } if(!$('reader').hidden){ if(document.body.classList.contains('immersive')) toggleUI(); else closeReader(false); } return; }
   if(open || $('reader').hidden) return;
@@ -1995,6 +2078,139 @@ function fullscreen(){
   const p = document.documentElement.requestFullscreen && document.documentElement.requestFullscreen(); if(!p){ toast(msg); return; } p.catch(()=>toast(msg));
 }
 $('fsBtn').onclick = fullscreen;
+
+/* =================================================================
+   Custom cover: pick part of a page and use it as the book's cover
+   ================================================================= */
+const CR = {url:null, blob:null, nw:0, nh:0, img:null, f:null};
+const CRATIO = 128/182;                       // the shelf's cover shape
+async function openCropper(){
+  const sp = S.spreads[S.idx]; if(!sp || !S.coverTarget) return;
+  if(F) finishFlip(false);
+  const pick = $('cropPick'); pick.innerHTML = '';
+  if(sp.length===2){
+    for(const side of ['left','right']){
+      const i = pageAt(sp, side); if(i==null) continue;
+      const b = document.createElement('button'); b.type='button'; b.textContent = side==='left' ? '左のページ' : '右のページ'; b.dataset.i = i;
+      b.onclick = ()=>loadCropPage(i); pick.append(b);
+    }
+  }
+  $('cropper').hidden = false;
+  try{ history.pushState({crop:1}, ''); }catch(e){}
+  await loadCropPage(sp[0]);
+}
+function closeCropper(fromHistory){
+  if($('cropper').hidden) return;
+  $('cropper').hidden = true;
+  if(CR.url){ URL.revokeObjectURL(CR.url); CR.url = null; } CR.blob = null;
+  if(!fromHistory){ try{ if(history.state && history.state.crop) quietBack(); }catch(e){} }
+}
+async function loadCropPage(i){
+  $('cropPick').querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed', String(+b.dataset.i===i)));
+  const pg = S.pages[i]; if(!pg) return;
+  let blob; try{ blob = await pg.getBlob(); }catch(e){ toast('このページを読み込めませんでした'); return; }
+  CR.blob = blob;
+  if(CR.url) URL.revokeObjectURL(CR.url);
+  CR.url = URL.createObjectURL(blob);
+  const im = $('cropImg');
+  await new Promise(r=>{ im.onload = r; im.onerror = r; im.src = CR.url; });
+  CR.nw = im.naturalWidth || 1; CR.nh = im.naturalHeight || 1;
+  layoutCrop(true);
+}
+function layoutCrop(resetFrame){
+  const st = $('cropStage'), W = st.clientWidth, H = st.clientHeight, pad = 20;
+  const s = Math.min((W-pad*2)/CR.nw, (H-pad*2)/CR.nh);
+  const iw = CR.nw*s, ih = CR.nh*s, ix = (W-iw)/2, iy = (H-ih)/2;
+  Object.assign($('cropImg').style, {left:ix+'px', top:iy+'px', width:iw+'px', height:ih+'px'});
+  const old = CR.img; CR.img = {x:ix, y:iy, w:iw, h:ih, s};
+  if(resetFrame || !CR.f){
+    let fw = iw, fh = fw/CRATIO; if(fh > ih){ fh = ih; fw = fh*CRATIO; }
+    fw *= 0.7; fh = fw/CRATIO;
+    CR.f = {x: ix + (iw-fw)/2, y: iy + (ih-fh)/2, w: fw};
+  } else if(old){
+    const k = iw/old.w; CR.f = {x: ix + (CR.f.x-old.x)*k, y: iy + (CR.f.y-old.y)*k, w: CR.f.w*k};
+  }
+  clampFrame(); drawFrame();
+}
+function clampFrame(){
+  const I = CR.img, f = CR.f;
+  f.w = Math.max(48, Math.min(f.w, I.w, I.h*CRATIO));
+  const h = f.w/CRATIO;
+  f.x = Math.max(I.x, Math.min(I.x+I.w-f.w, f.x));
+  f.y = Math.max(I.y, Math.min(I.y+I.h-h, f.y));
+}
+function drawFrame(){ const f = CR.f; Object.assign($('cropFrame').style, {left:f.x+'px', top:f.y+'px', width:f.w+'px', height:(f.w/CRATIO)+'px'}); }
+{
+  const st = $('cropStage'), cp = new Map(); let CG = null;
+  const at = e => { const r = st.getBoundingClientRect(); return {x:e.clientX-r.left, y:e.clientY-r.top}; };
+  const begin = (p, target) => { CG = {mode: target && target.classList && target.classList.contains('ch') ? 'resize' : 'move', sx:p.x, sy:p.y, f:{...CR.f}}; };
+  st.addEventListener('pointerdown', e=>{
+    if(!CR.img) return;
+    try{ st.setPointerCapture(e.pointerId); }catch(_){}
+    cp.set(e.pointerId, at(e));
+    if(cp.size===1) begin(at(e), e.target);
+    else if(cp.size===2){ const [a,b] = [...cp.values()]; CG = {mode:'pinch', d0:Math.hypot(a.x-b.x, a.y-b.y)||1, f:{...CR.f}}; }
+  });
+  st.addEventListener('pointermove', e=>{
+    if(!cp.has(e.pointerId) || !CG) return;
+    cp.set(e.pointerId, at(e));
+    const f0 = CG.f;
+    if(CG.mode==='pinch' && cp.size>=2){
+      const [a,b] = [...cp.values()], w = f0.w * Math.hypot(a.x-b.x, a.y-b.y)/CG.d0;
+      const cx = f0.x + f0.w/2, cy = f0.y + f0.w/CRATIO/2;
+      CR.f = {x: cx - w/2, y: cy - w/CRATIO/2, w};
+    } else if(CG.mode!=='pinch'){
+      const p = at(e), dx = p.x-CG.sx, dy = p.y-CG.sy;
+      CR.f = CG.mode==='resize' ? {x:f0.x, y:f0.y, w: f0.w + Math.max(dx, dy*CRATIO)} : {x:f0.x+dx, y:f0.y+dy, w:f0.w};
+    }
+    clampFrame(); drawFrame();
+  });
+  const end = e => { cp.delete(e.pointerId); if(!cp.size) CG = null; else if(cp.size===1) begin([...cp.values()][0], null); };
+  st.addEventListener('pointerup', end); st.addEventListener('pointercancel', end);
+  st.addEventListener('wheel', e=>{ e.preventDefault(); if(!CR.f) return; const f = CR.f, k = e.deltaY<0 ? 1.08 : 0.93, w = f.w*k;
+    CR.f = {x: f.x + (f.w-w)/2, y: f.y + (f.w-w)/CRATIO/2, w}; clampFrame(); drawFrame(); }, {passive:false});
+  window.addEventListener('resize', ()=>{ if(!$('cropper').hidden && CR.img) layoutCrop(false); });
+}
+async function saveCover(blob, custom){
+  const T = S.coverTarget; if(!T || !blob) return false;
+  try{
+    if(T.type==='lib'){
+      const b = books.get(T.id); if(!b) return false;
+      await DB.put('covers', blob, T.id);
+      const u = coverURL.get(T.id); if(u) URL.revokeObjectURL(u);
+      coverURL.set(T.id, URL.createObjectURL(blob));
+      b.customCover = custom; await DB.put('books', b);
+    } else {
+      const prev = dcover.get(T.ck) || {};
+      await DB.put('covers', {cover:blob, vols:prev.vols||0, custom}, T.ck);
+      if(prev.url) URL.revokeObjectURL(prev.url);
+      dcover.set(T.ck, {url:URL.createObjectURL(blob), vols:prev.vols||0});
+    }
+    return true;
+  }catch(e){ toast(storageError(e).message); return false; }
+}
+$('coverBtn').onclick = ()=>openCropper();
+$('cropCancel').onclick = ()=>closeCropper(false);
+$('cropOk').onclick = async ()=>{
+  if(!CR.blob || !CR.f) return;
+  const I = CR.img, f = CR.f, s = I.s;
+  const sx = Math.round((f.x-I.x)/s), sy = Math.round((f.y-I.y)/s);
+  const sw = Math.max(1, Math.min(CR.nw - sx, Math.round(f.w/s))), sh = Math.max(1, Math.min(CR.nh - sy, Math.round(f.w/CRATIO/s)));
+  try{
+    const bmp = await createImageBitmap(CR.blob, sx, sy, sw, sh);
+    const cv = document.createElement('canvas'); cv.width = 360; cv.height = Math.round(360/CRATIO);
+    const c = cv.getContext('2d'); c.imageSmoothingQuality = 'high'; c.drawImage(bmp, 0, 0, cv.width, cv.height); bmp.close && bmp.close();
+    const out = await new Promise(r=>cv.toBlob(r, 'image/jpeg', 0.88));
+    if(await saveCover(out, true)){ closeCropper(false); toast('表紙を差し替えました'); }
+  }catch(e){ toast('表紙を作れませんでした。別の範囲でお試しください'); }
+};
+$('cropReset').onclick = async ()=>{
+  if(!S.entries || !S.entries.length) return;
+  try{
+    const first = await coverFrom(await S.entries[0].getBlob());
+    if(await saveCover(first, false)){ closeCropper(false); toast('元の表紙に戻しました'); }
+  }catch(e){ toast('元の表紙を作れませんでした'); }
+};
 
 /* sheets */
 function closeSheets(){ document.querySelectorAll('.sheet-back').forEach(s=>s.hidden=true); }
@@ -2029,6 +2245,7 @@ function syncSettings(){
 document.querySelectorAll('.seg[data-key] button').forEach(b=>b.onclick=()=>{
   const key=b.parentElement.dataset.key; S[key]=b.dataset.v; pref.set(key,S[key]); syncSettings();
   if(key==='flip' || !S.pages.length) return;
+  if(key==='split' || key==='dir'){ resetPages(); return; }
   const p=curPage(); buildSpreads(p); $('grid').classList.toggle('rtl', S.dir==='rtl'); render();
 });
 $('coverSolo').onchange=e=>{ S.coverSolo=e.target.checked; pref.set('coverSolo',S.coverSolo); if(!S.pages.length) return; const p=curPage(); buildSpreads(p); render(); };
@@ -2091,6 +2308,7 @@ async function init(){
   setTab(pref.get('tab','lib')==='drive' ? 'drive' : 'lib');
 }
 syncSettings();
+$('verHelp').textContent = `（版 ${APP_VERSION}）`;
 init();
 })();
 </script>
