@@ -67,6 +67,8 @@ body.immersive #reader .bar{display:none}
   padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));padding-block:14px 32px}
 .meta-row{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;margin-bottom:14px;font-size:var(--step--1);color:var(--muted)}
 .warn{color:var(--warn)}
+#dSync{order:3;flex-basis:100%;font-size:var(--step--1);color:var(--muted)}
+#dSync:empty{display:none}
 .crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:2px;flex:1;min-width:0;font-size:var(--step-0)}
 .crumbs button{background:none;border:none;color:var(--accent);padding:6px 4px;border-radius:6px;max-width:24ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .crumbs button:last-child{color:var(--text);font-weight:700}
@@ -143,6 +145,27 @@ body.editing #libView .shelf.list .card > .del{display:flex}
 .curl img{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;display:block;pointer-events:none}
 .curl img:not([src]){visibility:hidden}
 .cshade{position:absolute;inset:0;pointer-events:none}
+/* fit modes and vertical scrolling */
+.stage.fit-w{overflow-x:hidden;overflow-y:auto;touch-action:pan-y}
+.stage.fit-w > .spread{position:relative;inset:auto;min-height:100%;align-items:flex-start;padding:0}
+.stage.fit-w > .spread img{width:100%;height:auto;max-width:none;max-height:none}
+.stage.fit-w > .spread.pair .half{height:auto;align-items:flex-start}
+.stage.fit-h{overflow-x:auto;overflow-y:hidden;touch-action:pan-x}
+.stage.fit-h > .spread{position:relative;inset:auto;height:100%;min-width:100%;width:max-content;padding:0}
+.stage.fit-h > .spread img{height:100%;width:auto;max-width:none;max-height:none}
+.stage.fit-h > .spread.pair .half{width:auto;height:100%}
+.stage.vert{overflow-x:hidden;overflow-y:auto;touch-action:pan-y}
+.vlist{width:min(100%, 900px);margin:0 auto;display:flex;flex-direction:column}
+.vpage{position:relative;width:100%;background:color-mix(in srgb, var(--raise) 60%, transparent)}
+.vpage img{display:block;width:100%;height:100%;object-fit:contain;-webkit-user-drag:none;pointer-events:none}
+.vpage img:not([src]){visibility:hidden}
+.endpanel{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(88px + env(safe-area-inset-bottom, 0px));z-index:6;
+  width:min(calc(100% - 32px), 460px);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;
+  display:flex;flex-direction:column;gap:10px;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+.endpanel .ep-title{font-weight:700;font-size:var(--step-1)}
+.endpanel .ep-next{color:var(--muted);line-height:1.5;word-break:break-all}
+.endpanel .ep-btns{display:flex;gap:8px;flex-wrap:wrap}
+.endpanel .ep-btns .btn{flex:1 1 auto}
 .cropper{position:fixed;inset:0;z-index:25;background:var(--ink);display:flex;flex-direction:column}
 .cropstage{flex:1;min-height:0;position:relative;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
 #cropImg{position:absolute;display:block;pointer-events:none;-webkit-user-drag:none}
@@ -251,6 +274,7 @@ kbd{font-family:inherit;background:var(--raise);border:1px solid var(--line);bor
     <div id="driveView" hidden>
       <div class="meta-row">
         <nav class="crumbs" id="crumbs" aria-label="フォルダの場所"></nav>
+        <span id="dSync"></span>
         <div class="tools">
           <button class="btn" id="dLogin" type="button" hidden>Googleにログイン</button>
           <button class="btn" id="dSetupBtn" type="button">準備・設定</button>
@@ -274,6 +298,8 @@ kbd{font-family:inherit;background:var(--raise);border:1px solid var(--line);bor
     <div class="tools">
       <button class="btn" id="rSave" type="button" hidden title="本棚に保存してオフラインで読めるようにする">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span class="lbl">保存</span></button>
+      <button class="btn" id="fitBtn" type="button" title="表示のしかたを切り替え（全体／横幅／縦幅／縦スクロール）">
+        <svg id="fitIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"></svg><span class="lbl" id="fitLbl">全体</span></button>
       <button class="btn" id="coverBtn" type="button" title="このページの一部を表紙にする" hidden>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2v16h16"/><path d="M2 6h16v16"/></svg><span class="lbl">表紙</span></button>
       <button class="btn" id="thumbBtn" type="button" title="ページ一覧">
@@ -287,6 +313,15 @@ kbd{font-family:inherit;background:var(--raise);border:1px solid var(--line);bor
   <main class="stage" id="stage" aria-label="ページ表示。左右をタップかドラッグでめくる、中央タップでメニュー、ピンチで拡大">
     <div class="loading" id="loading" hidden></div>
     <div class="edge-hint l" id="hintL"></div>
+    <div class="endpanel" id="endPanel" hidden role="dialog" aria-labelledby="epTitle">
+      <div class="ep-title" id="epTitle">最後のページです</div>
+      <div class="ep-next" id="epNext"></div>
+      <div class="ep-btns">
+        <button class="btn primary" id="epGo" type="button">次の巻を読む</button>
+        <button class="btn" id="epBack" type="button">戻る</button>
+        <button class="btn" id="epStay" type="button">閉じる</button>
+      </div>
+    </div>
     <div class="edge-hint r" id="hintR"></div>
   </main>
   <footer class="bar bottom">
@@ -314,9 +349,13 @@ kbd{font-family:inherit;background:var(--raise);border:1px solid var(--line);bor
       <div class="row"><h3>読むときの操作</h3>
       <p class="note">ページの端を指で押さえたまま動かすと、本のようにめくれます。半分を超えたところで離すか、勢いよく払うとめくれ、手前で離すと戻ります。左右のタップでもめくれます。<br>
         中央タップでメニューの表示・非表示。2本指で広げると拡大、中央のダブルタップでも拡大。横向きにすると自動で見開き。Androidの「戻る」でひとつ前の画面へ。<br>
-        2ページ分が1枚になった画像は、<b>設定</b> →「2ページに分ける」で1ページずつ読めます。</p></div>
+        2ページ分が1枚になった画像は、<b>設定</b> →「2ページに分ける」で1ページずつ読めます。<br>
+        上の <b>全体</b> ボタンで「全体 → 横幅 → 縦幅 → 縦スクロール」と表示を切り替えられます。横幅・縦幅では、タップするとページの中を少しずつ進み、端まで来ると次のページへ。本ごとに覚えます。<br>
+        最後のページでさらに進むと、ファイル名の巻数から <b>次の巻</b> を探して案内します。</p></div>
       <div class="row"><h3>表紙を差し替える</h3>
       <p class="note">本を開いて、表紙にしたい場面のページで <b>表紙</b> ボタンを押します。枠を指で動かし、2本指か右下の丸で大きさを変えて「この範囲を表紙にする」。「元の表紙に戻す」でいつでも戻せます。</p></div>
+      <div class="row"><h3>タブレットとiPhoneで続きを読む</h3>
+      <p class="note">両方の端末でドライブにログインしていると、読んだ位置と表紙が自動で共有されます（ドライブ内の、このアプリ専用の隠しフォルダに保存。ドライブのファイル一覧には出ません）。片方で作った表紙はもう一方で作り直さないので、iPhoneでも軽く表示できます。同期の状態は本棚の上とドライブ画面に出ます。</p></div>
       <div class="row"><h3>保存について</h3>
       <p class="note">本棚の本はこのページ用の保存領域（Chromeのサイトデータ）に入り、元のファイルとほぼ同じ容量を使います。Chromeで「サイトデータ」を削除すると消えます（ドライブの元ファイルは残ります）。いらない本は <b>整理</b> から削除できます。</p></div>
     </div>
@@ -354,7 +393,7 @@ kbd{font-family:inherit;background:var(--raise);border:1px solid var(--line);bor
         <li><b>ドライブ</b> タブ →「準備・設定」に、コピーしたクライアントIDを貼って「保存」→「Googleにログイン」。</li>
         <li>「このアプリは Google で確認されていません」と出たら「詳細」→「（移動）」を選びます。自分専用のアプリなので問題ありません。</li>
       </ol>
-      <p class="note">許可するのは「ドライブのファイルの閲覧」だけで、変更や削除はできません。ログインは1時間ごとに切れるので、そのときは「Googleにログイン」をもう一度押してください。本棚の中身はページのアドレスごとに別々です。</p></div>
+      <p class="note">許可するのは「ドライブのファイルの閲覧」と「このアプリ専用の隠しフォルダ」（読んだ位置と表紙を端末間で共有するための場所）だけです。あなたのファイルの変更・削除や、共有設定の変更はできません。ログインは1時間ごとに切れるので、そのときは「Googleにログイン」をもう一度押してください。本棚の中身はページのアドレスごとに別々です。</p></div>
     </div>
   </div>
 </div>
@@ -394,6 +433,8 @@ kbd{font-family:inherit;background:var(--raise);border:1px solid var(--line);bor
         </div></div>
       <label class="check"><input type="checkbox" id="coverSolo"> 表紙（1ページ目）を単独で表示する</label>
       <label class="check"><input type="checkbox" id="shiftOne"> 見開きを1ページずらす（左右の組み合わせが合わないとき）</label>
+      <div class="row"><h3>音量ボタン・リモコン</h3>
+        <p class="note">音量ボタン（下：次へ／上：前へ）や、Bluetoothのページめくりリモコンでもめくれます。ただし Android の Chrome は、音量ボタンをページに渡さないことが多いです。この画面を開いたままボタンを押すと、届いているか確かめられます。<br>押したボタン：<b id="keyTest">（まだ押されていません）</b></p></div>
       <p class="note">キーボード：<kbd>←</kbd><kbd>→</kbd> ページ送り　<kbd>Space</kbd> 次へ　<kbd>Esc</kbd> 戻る　<kbd>F</kbd> 全画面</p>
     </div>
   </div>
@@ -498,7 +539,7 @@ onmessage = e => {
 </script>
 <script>
 (() => {
-const APP_VERSION = '2026.10.19-3';
+const APP_VERSION = '2026.10.19-4';
 const $ = id => document.getElementById(id);
 const IMG = /\.(jpe?g|png|gif|webp|avif|bmp)$/i;
 const ARCH = /\.(zip|cbz|rar|cbr)$/i;
@@ -896,12 +937,14 @@ async function importContainer(name, blob, depth, ctx){
         inner = null; await sleep(0);
       }
       if(images.length >= LOOSE_MIN){
+        ctx.cur = depth>0 ? name.replace(/\\/g,'/') : null;
         const w = ctx.sink.pages(titleOf(name), ctx);
         for(let i=0;i<images.length;i++){ await w.add(images[i].name, await images[i].getBlob()); if(i%10===0) ctx.step(`「${label}」の画像を保存中 ${i+1}/${images.length}`); }
         await w.finish();
       }
     } else if(images.length){
       ctx.step(`「${titleOf(name)}」を保存中（${fmtBytes(blob.size)}）`);
+      ctx.cur = depth>0 ? name.replace(/\\/g,'/') : null;
       await ctx.sink.zip(titleOf(name), blob, images, ctx);
     } else ctx.note(`「${label}」の中に画像が見つかりませんでした`);
     return;
@@ -922,6 +965,7 @@ async function importContainer(name, blob, depth, ctx){
     const takeImgs = arcs.length ? imgs.length >= LOOSE_MIN : imgs.length > 0;
     const want = new Set([...(takeImgs ? imgs : []), ...arcs]);
     if(!want.size){ ctx.note(`「${label}」の中に画像が見つかりませんでした`); return; }
+    ctx.cur = depth>0 ? name.replace(/\\/g,'/') : null;
     const w = takeImgs ? ctx.sink.pages(titleOf(name), ctx) : null;
     let k = 0;
     try{
@@ -1002,6 +1046,19 @@ async function saveMeta(meta, cover){
 }
 async function freeSpace(){ try{ const e = await navigator.storage.estimate(); return (e.quota||Infinity) - (e.usage||0); }catch(e){ return Infinity; } }
 
+// a key that names the same book on every device: Drive file id (+ inner volume), or file name and size
+function skeyFor(ctx){
+  const base = ctx.src.startsWith('drive:') ? 'f:'+ctx.src.slice(6) : 'local:'+ctx.src;
+  return ctx.cur ? base+'#'+ctx.cur : base;
+}
+function syncKeyOf(b){
+  if(!b || b.kind==='sample') return null;
+  if(b.kind==='remote') return b.key;
+  if(b.skey) return b.skey;
+  if(!b.src) return null;
+  if([...books.values()].filter(x=>x.src===b.src).length > 1) return null;   // older nested imports share one source
+  return b.src.startsWith('drive:') ? 'f:'+b.src.slice(6) : 'local:'+b.src;
+}
 const sink = {
   async zip(title, blob, images, ctx){
     if(await freeSpace() < blob.size*1.1 + 50e6) throw new Error('タブレットの空き容量が足りません。いらない本を「整理」から削除してください。');
@@ -1018,9 +1075,10 @@ const sink = {
     }catch(e){ await delParts(); throw e; }
     const stored = await storedZip(id, n);
     let cover=null; try{ cover = await coverFrom(await (await zipIndex(stored)).images[0].getBlob()); }catch(e){}
-    const meta = {id, title, kind:'zip', chunks:n, pages:images.length, bytes:blob.size, src:ctx.src, added:Date.now()+ctx.n, lastPage:0, lastRead:0, opened:false};
+    const meta = {id, title, kind:'zip', chunks:n, pages:images.length, bytes:blob.size, src:ctx.src, skey:skeyFor(ctx), added:Date.now()+ctx.n, lastPage:0, lastRead:0, opened:false};
     ctx.n++;
     try{ await saveMeta(meta, cover); }catch(e){ await delParts(); throw storageError(e); }
+    Sync.adoptBook(meta);
     ctx.made.push(title);
   },
   pages(title, ctx){
@@ -1036,9 +1094,10 @@ const sink = {
         if(!names.length) return;
         const order = names.map((_,i)=>i).sort((a,b)=>coll.compare(names[a],names[b]));
         let cover=null; try{ cover = await coverFrom(await DB.get('pages', id+'/'+String(order[0]).padStart(5,'0'))); }catch(e){}
-        const meta = {id, title, kind:'pages', pages:names.length, order, bytes, src:ctx.src, added:Date.now()+ctx.n, lastPage:0, lastRead:0, opened:false};
+        const meta = {id, title, kind:'pages', pages:names.length, order, bytes, src:ctx.src, skey:skeyFor(ctx), added:Date.now()+ctx.n, lastPage:0, lastRead:0, opened:false};
         ctx.n++;
         try{ await saveMeta(meta, cover); }catch(e){ await this.abort(); throw storageError(e); }
+        Sync.adoptBook(meta);
         ctx.made.push(title);
       }
     };
@@ -1108,6 +1167,7 @@ $('fileIn').onchange = e=>{ const fs=[...e.target.files]; e.target.value=''; if(
 async function updateMeta(){
   const row = $('metaRow'); row.innerHTML='';
   const s1 = document.createElement('span'); s1.textContent = books.size ? `${books.size}冊` : ''; row.appendChild(s1);
+  const st = Sync.status(); if(st){ const ss = document.createElement('span'); ss.textContent = st; row.appendChild(ss); }
   const sv = document.createElement('span'); sv.textContent = `版 ${APP_VERSION}`; sv.style.marginLeft = 'auto'; row.appendChild(sv);
   try{
     const e = await navigator.storage.estimate();
@@ -1233,12 +1293,12 @@ const Drive = {
     return this.gisP;
   },
   async prepare(){
-    if(!this.token){ try{ const t = JSON.parse(sessionStorage.getItem('mv:gtok')||'null'); if(t && t.exp>Date.now()){ this.token=t.token; this.exp=t.exp; } }catch(e){} }
+    if(!this.token){ try{ const t = JSON.parse(sessionStorage.getItem('mv:gtok')||'null'); if(t && t.exp>Date.now()){ this.token=t.token; this.exp=t.exp; this.scope=t.scope||''; Sync.onLogin(); } }catch(e){} }
     if(framed || !this.clientId() || this.tc) return;
     try{
       await this.loadGis();
       this.tc = google.accounts.oauth2.initTokenClient({
-        client_id: this.clientId(), scope:'https://www.googleapis.com/auth/drive.readonly',
+        client_id: this.clientId(), scope:'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.appdata',
         callback: r => this.onToken(r), error_callback: e => this.onTokenError(e)
       });
     }catch(e){ this.tc=null; renderDrive('Googleのログイン部品を読み込めませんでした。ネットにつながっているか確認してください。'); }
@@ -1246,13 +1306,14 @@ const Drive = {
   login(){
     // must run directly inside a tap so the Google window is allowed to open
     if(!this.tc){ this.prepare(); toast('準備中です。数秒後にもう一度押してください'); return; }
-    this.tc.requestAccessToken({prompt: pref.get('gConsented',false) ? '' : 'consent'});
+    this.tc.requestAccessToken({prompt: pref.get('gConsented2',false) ? '' : 'consent'});
   },
   onToken(r){
     if(r.error){ renderDrive('ログインできませんでした（'+r.error+'）'); return; }
-    this.token = r.access_token; this.exp = Date.now() + (Number(r.expires_in||3600)-60)*1000;
-    try{ sessionStorage.setItem('mv:gtok', JSON.stringify({token:this.token, exp:this.exp})); }catch(e){}
-    pref.set('gConsented', true);
+    this.token = r.access_token; this.exp = Date.now() + (Number(r.expires_in||3600)-60)*1000; this.scope = r.scope || '';
+    try{ sessionStorage.setItem('mv:gtok', JSON.stringify({token:this.token, exp:this.exp, scope:this.scope})); }catch(e){}
+    pref.set('gConsented2', true);
+    Sync.onLogin();
     dirCache.clear(); renderDrive();
     if(pendingAfterLogin){ const f=pendingAfterLogin; pendingAfterLogin=null; f(); }
   },
@@ -1263,8 +1324,8 @@ const Drive = {
     try{ r = await fetch(url, {...opt, headers:{...(opt.headers||{}), Authorization:'Bearer '+this.token}}); }
     catch(e){ if(e.name==='AbortError') throw e; throw new Error('ネットにつながらないか、ドライブに届きませんでした'); }
     if(r.status===401){ this.token=null; try{ sessionStorage.removeItem('mv:gtok'); }catch(e){} throw new LoginNeeded('login'); }
-    if(r.status===403) throw new Error('ドライブへのアクセスが拒否されました（APIの有効化と共有設定を確認してください）');
-    if(r.status===404) throw new Error('ファイルが見つかりませんでした（移動・削除された可能性があります）');
+    if(r.status===403) throw Object.assign(new Error('ドライブへのアクセスが拒否されました（APIの有効化と共有設定を確認してください）'), {status:403});
+    if(r.status===404) throw Object.assign(new Error('ファイルが見つかりませんでした（移動・削除された可能性があります）'), {status:404});
     if(!r.ok) throw new Error(`ドライブからの読み込みに失敗しました（${r.status}）`);
     return r;
   },
@@ -1292,6 +1353,192 @@ const Drive = {
   async media(id){ return (await this.fetch(this.mediaUrl(id))).blob(); },
   file(f){ return new RangeFile((s,e)=>this.range(f.id,s,e), Number(f.size||0)); }
 };
+
+/* =================================================================
+   Sharing between devices. Reading positions (progress.json) and covers
+   (covers.json + small JPEGs) live in this app's hidden Drive folder
+   (appDataFolder): only this app can see it, and it never touches your files.
+   ================================================================= */
+const Sync = {
+  pos:{}, covers:null, ids:{}, lastPull:0, lastPush:0, needScope:false, err:'', pulling:null,
+  dirty: pref.get('syncDirty', {}), posT:0, coverQ:[], coverBusy:false, idxDirty:{}, idxT:0,
+  hasScope(){ return /drive\.appdata/.test(Drive.scope||''); },
+  ready(){ return Drive.ready() && this.hasScope(); },
+  status(){
+    if(!Drive.clientId() || framed) return '';
+    if(!Drive.ready()) return '端末間の同期：ドライブでログインすると同期します';
+    if(!this.hasScope()) return '端末間の同期：もう一度ログインして「アプリのデータ」の許可が必要です';
+    if(this.err) return '端末間の同期：失敗（' + this.err + '）';
+    const t = Math.max(this.lastPull, this.lastPush);
+    return t ? `端末間の同期：オン（${new Date(t).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})}）` : '端末間の同期：準備中';
+  },
+  showStatus(){ const d = $('dSync'); if(d) d.textContent = this.status(); if(tab==='lib') updateMeta(); },
+  async findFile(name){
+    if(this.ids[name]) return this.ids[name];
+    const p = new URLSearchParams({spaces:'appDataFolder', q:`name='${name}' and trashed=false`, fields:'files(id,name)', pageSize:'10'});
+    const j = await (await Drive.fetch('https://www.googleapis.com/drive/v3/files?'+p)).json();
+    const id = j.files && j.files[0] && j.files[0].id;
+    if(id) this.ids[name] = id;
+    return id || null;
+  },
+  async readJSON(name){
+    const id = await this.findFile(name); if(!id) return {};
+    try{ return await (await Drive.fetch(Drive.mediaUrl(id))).json() || {}; }
+    catch(e){ if(e.status===404){ delete this.ids[name]; return {}; } throw e; }
+  },
+  async writeFile(name, blob, type){
+    const id = await this.findFile(name);
+    if(id){
+      try{ await Drive.fetch(`https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(id)}?uploadType=media`, {method:'PATCH', headers:{'Content-Type':type}, body:blob}); return id; }
+      catch(e){ if(e.status!==404) throw e; delete this.ids[name]; }
+    }
+    const boundary = 'mv' + Math.random().toString(36).slice(2);
+    const body = new Blob([`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({name, parents:['appDataFolder']})}\r\n--${boundary}\r\nContent-Type: ${type}\r\n\r\n`, blob, `\r\n--${boundary}--`]);
+    const j = await (await Drive.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {method:'POST', headers:{'Content-Type':`multipart/related; boundary=${boundary}`}, body})).json();
+    this.ids[name] = j.id; return j.id;
+  },
+  fail(e){
+    if(e instanceof LoginNeeded) return;
+    if(e && e.status===403){ this.err = '許可がありません。もう一度ログインしてください'; }
+    else this.err = (e && e.message || 'エラー').slice(0, 40);
+    this.showStatus();
+  },
+  onLogin(){
+    this.needScope = !this.hasScope(); this.err = '';
+    this.showStatus();
+    if(this.ready()) this.pull(true).then(()=>this.pushPos());
+  },
+  async pull(force){
+    if(!this.ready()) return;
+    if(!force && Date.now()-this.lastPull < 30000) return;
+    if(this.pulling) return this.pulling;
+    this.pulling = (async()=>{
+      try{
+        const [pos, covers] = await Promise.all([this.readJSON('progress.json'), this.readJSON('covers.json')]);
+        this.pos = pos || {}; this.covers = covers || {}; this.lastPull = Date.now(); this.err = '';
+        const changed = applyRemotePositions(this.pos);
+        await applyRemoteCovers(this.covers);
+        if(changed){ if(tab==='lib' && $('reader').hidden) renderShelf(); else if(tab==='drive' && $('reader').hidden) renderDrive(); }
+      }catch(e){ this.fail(e); }
+      finally{ this.pulling = null; this.showStatus(); }
+    })();
+    return this.pulling;
+  },
+  async pullQuick(){ if(!this.ready() || Date.now()-this.lastPull < 30000) return; await Promise.race([this.pull(true), sleep(2500)]); },
+  notePos(key, rec){
+    if(!key) return;
+    this.dirty[key] = rec; pref.set('syncDirty', this.dirty);
+    clearTimeout(this.posT); this.posT = setTimeout(()=>this.pushPos(), 5000);
+  },
+  async pushPos(){
+    clearTimeout(this.posT);
+    if(!this.ready() || !Object.keys(this.dirty).length || this.pushing) return;
+    this.pushing = true;
+    const mine = this.dirty; this.dirty = {};
+    try{
+      const cur = await this.readJSON('progress.json');
+      for(const [k, r] of Object.entries(mine)) if(!cur[k] || (cur[k].lastRead||0) < r.lastRead) cur[k] = r;
+      await this.writeFile('progress.json', new Blob([JSON.stringify(cur)], {type:'application/json'}), 'application/json');
+      this.pos = cur; this.lastPush = Date.now(); this.err = '';
+    }catch(e){
+      for(const [k, r] of Object.entries(mine)) if(!this.dirty[k] || this.dirty[k].lastRead < r.lastRead) this.dirty[k] = r;
+      this.fail(e);
+    }finally{ this.pushing = false; pref.set('syncDirty', this.dirty); this.showStatus(); }
+  },
+  /* covers */
+  remoteCover(key){ return this.covers && this.covers[key] || null; },
+  pushCover(key, blob, meta){
+    if(!key || !blob) return;
+    this.coverQ = this.coverQ.filter(q=>q.key!==key);
+    this.coverQ.push({key, blob, meta:{vols:meta.vols||0, custom:!!meta.custom, t:meta.t||Date.now()}});
+    this.pumpCover();
+  },
+  async pumpCover(){
+    if(this.coverBusy || !this.ready()) return;
+    this.coverBusy = true;
+    try{
+      while(this.coverQ.length && this.ready()){
+        const q = this.coverQ.shift();
+        try{
+          const id = await this.writeFile('cover-' + hashKey(q.key) + '.jpg', q.blob, 'image/jpeg');
+          this.idxDirty[q.key] = {id, ...q.meta};
+          if(this.covers) this.covers[q.key] = this.idxDirty[q.key];
+          clearTimeout(this.idxT); this.idxT = setTimeout(()=>this.pushIndex(), 4000);
+        }catch(e){ if(e instanceof LoginNeeded){ this.coverQ.unshift(q); break; } this.fail(e); }
+      }
+    }finally{ this.coverBusy = false; }
+  },
+  async pushIndex(){
+    if(!this.ready() || !Object.keys(this.idxDirty).length) return;
+    const mine = this.idxDirty; this.idxDirty = {};
+    try{
+      const cur = await this.readJSON('covers.json');
+      for(const [k, v] of Object.entries(mine)) if(!cur[k] || (cur[k].t||0) <= v.t) cur[k] = v;
+      await this.writeFile('covers.json', new Blob([JSON.stringify(cur)], {type:'application/json'}), 'application/json');
+      this.covers = cur; this.lastPush = Date.now(); this.showStatus();
+    }catch(e){ Object.assign(this.idxDirty, mine); this.fail(e); }
+  },
+  async fetchCover(key){
+    const rc = this.remoteCover(key); if(!rc || !this.ready()) return null;
+    try{ const b = await Drive.media(rc.id); return b && b.size ? {blob:b, rc} : null; }catch(e){ return null; }
+  },
+  // a book just saved to the shelf: use a cover someone made for it on another device
+  async adoptBook(meta){
+    const sk = meta.skey; const rc = sk && this.remoteCover('lib:'+sk);
+    if(!rc || !rc.custom) return;
+    const got = await this.fetchCover('lib:'+sk); if(!got) return;
+    try{ await DB.put('covers', got.blob, meta.id); const u = coverURL.get(meta.id); if(u) URL.revokeObjectURL(u); coverURL.set(meta.id, URL.createObjectURL(got.blob));
+      meta.customCover = true; meta.coverT = rc.t; await DB.put('books', meta); if(tab==='lib') renderShelf(); }catch(e){}
+  }
+};
+function hashKey(s){ let h = 0x811c9dc5; for(let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16).padStart(8,'0') + s.length.toString(16); }
+function applyRemotePositions(pos){
+  let changed = false;
+  const reading = !$('reader').hidden && S.book ? syncKeyOf(S.book) : null;
+  for(const [key, r] of Object.entries(pos || {})){
+    if(!r || typeof r.lastRead!=='number' || key===reading) continue;
+    const local = remotePos.get(key);
+    if(!local || (local.lastRead||0) < r.lastRead){
+      const rec = {key, lastPage:r.lastPage|0, pages:r.pages|0, lastRead:r.lastRead};
+      remotePos.set(key, rec); DB.put('remote', rec).catch(()=>{}); changed = true;
+    }
+    for(const b of books.values()){
+      if(syncKeyOf(b)!==key || (b.lastRead||0) >= r.lastRead) continue;
+      b.lastPage = Math.min(r.lastPage|0, Math.max(0, (b.pages||1)-1)); b.lastRead = r.lastRead; b.opened = true;
+      DB.put('books', b).catch(()=>{}); changed = true;
+    }
+  }
+  return changed;
+}
+async function applyRemoteCovers(index){
+  const since = pref.get('coverSyncT', 0); let newest = since, changed = false;
+  for(const [key, rc] of Object.entries(index || {})){
+    if(!rc || !rc.t || rc.t <= since) continue;
+    newest = Math.max(newest, rc.t);
+    if(key.startsWith('lib:')){
+      const sk = key.slice(4);
+      for(const b of books.values()){
+        if(syncKeyOf(b)!==sk || (b.coverT||0) >= rc.t) continue;
+        const got = await Sync.fetchCover(key); if(!got) continue;
+        try{ await DB.put('covers', got.blob, b.id); const u = coverURL.get(b.id); if(u) URL.revokeObjectURL(u); coverURL.set(b.id, URL.createObjectURL(got.blob));
+          b.customCover = !!rc.custom; b.coverT = rc.t; await DB.put('books', b); changed = true; }catch(e){}
+      }
+    } else {
+      const local = await DB.get('covers', key);
+      if(!local || local.fail || (local.t||0) >= rc.t) continue;        // missing ones are fetched when shown
+      const got = await Sync.fetchCover(key); if(!got) continue;
+      try{ await DB.put('covers', {cover:got.blob, vols:rc.vols||0, custom:!!rc.custom, t:rc.t}, key);
+        const prev = dcover.get(key); if(prev && prev.url) URL.revokeObjectURL(prev.url);
+        dcover.set(key, {url:URL.createObjectURL(got.blob), vols:rc.vols||0}); changed = true; }catch(e){}
+    }
+  }
+  pref.set('coverSyncT', newest);
+  if(changed && $('reader').hidden){ tab==='lib' ? renderShelf() : renderDrive(); }
+}
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='hidden'){ Sync.pushPos(); Sync.pushIndex(); }
+  else if(Sync.ready()) Sync.pull(false);
+});
 let pendingAfterLogin = null;
 $('dLogin').onclick = ()=>Drive.login();
 
@@ -1382,7 +1629,7 @@ async function renderDrive(err){
   const imgs = items.filter(f=>IMG.test(f.name) && f.mimeType!==SHORTCUT).sort((a,b)=>coll.compare(a.name,b.name));
   if(imgs.length>=2 && !q) g.appendChild(imageFolderCard(top, imgs));
   for(const f of folders) g.appendChild(folderCard(f));
-  for(const f of arcs) g.appendChild(driveArcCard(f));
+  for(const f of arcs) g.appendChild(driveArcCard(f, arcs));
   if(!g.children.length) driveMsg(q ? `「${esc($('q').value)}」に一致するものはありません。` : 'このフォルダには、漫画のZIP・RARやフォルダがありません。');
 }
 $('driveMsg').addEventListener('click', e=>{
@@ -1423,7 +1670,15 @@ function saveButton(src, name, get){
 }
 function refreshDriveSaved(){ document.querySelectorAll('#dgrid .save').forEach(b=>b._mark && b._mark()); }
 function withSaveRow(el, saveBtn){ el.querySelector('.crow').append(saveBtn); }
-function driveArcCard(f){
+function driveItem(f, sibs){
+  return {name:f.name, key:'f:'+f.id, ck:'dc:'+f.id+':'+f.modifiedTime, open: async()=>Drive.file(f), src:'drive:'+f.id,
+    siblings: ()=>(sibs||[f]).map(x=>driveItem(x, sibs))};
+}
+function volItem(top, v){
+  return {name:v.name, key:top.key+'#'+v.name, ck:top.ck+'#'+v.name, open:()=>v.open(), src:top.src+'#'+v.name,
+    siblings: ()=>top.vols.map(x=>volItem(top, x))};
+}
+function driveArcCard(f, sibs){
   const key = 'f:'+f.id;
   const pos = remotePos.get(key); const pi = pos && progressInfo(pos.lastPage, pos.pages, true);
   const el = buildCard({title:titleOf(f.name), coverUrl:null, badge: RAR.test(f.name) ? 'RAR' : 'ZIP', prog:pi, done: pi && pi.pct>=100,
@@ -1431,7 +1686,7 @@ function driveArcCard(f){
   const ck = 'dc:'+f.id+':'+f.modifiedTime;
   if(!listView('drive')) lazyCover(el, ck, ()=>peekCover(Drive.file(f)));
   withSaveRow(el, saveButton('drive:'+f.id, f.name, async()=>Drive.file(f)));
-  el.onclick = ()=>openDriveArchive({name:f.name, key, ck, open: async()=>Drive.file(f), src:'drive:'+f.id});
+  el.onclick = ()=>openDriveArchive(driveItem(f, sibs));
   return el;
 }
 function renderArcItems(top){
@@ -1445,7 +1700,7 @@ function renderArcItems(top){
     const ck = top.ck+'#'+v.name;
     if(!listView('drive')) lazyCover(el, ck, async()=>peekCover(await v.open()));
     withSaveRow(el, saveButton(top.src+'#'+v.name, v.name, ()=>v.open()));
-    el.onclick = ()=>openDriveArchive({name:v.name, key, ck, open:()=>v.open(), src:top.src+'#'+v.name});
+    el.onclick = ()=>openDriveArchive(volItem(top, v));
     g.appendChild(el);
   });
 }
@@ -1476,10 +1731,17 @@ function pumpCovers(){
     coverRunning++;
     (async()=>{
       try{
+        const got = await Sync.fetchCover(ck);
+        if(got){
+          const c = {url:URL.createObjectURL(got.blob), vols:got.rc.vols||0};
+          dcover.set(ck, c); DB.put('covers', {cover:got.blob, vols:c.vols, custom:!!got.rc.custom, t:got.rc.t}, ck).catch(()=>{}); show(c);
+          return;
+        }
         const r = await compute();
         const small = await coverFrom(r.blob);
-        const c = {url:URL.createObjectURL(small), vols:r.vols||0};
-        dcover.set(ck, c); DB.put('covers', {cover:small, vols:c.vols}, ck).catch(()=>{}); show(c);
+        const c = {url:URL.createObjectURL(small), vols:r.vols||0}, t = Date.now();
+        dcover.set(ck, c); DB.put('covers', {cover:small, vols:c.vols, t}, ck).catch(()=>{}); show(c);
+        Sync.pushCover(ck, small, {vols:c.vols, custom:false, t});
       }catch(e){
         if(e instanceof LoginNeeded){ show(null); return; }
         const c={fail:true, v:3}; dcover.set(ck, c); DB.put('covers', c, ck).catch(()=>{}); show(c);
@@ -1491,6 +1753,7 @@ function pumpCovers(){
 /* reading straight from Drive */
 async function openDriveArchive(item){
   const tok = beginLoad(titleOf(item.name));
+  await Sync.pullQuick();
   const step = t=>{ if(tok===readerToken) $('loading').textContent = t; };
   try{
     const file = await item.open();
@@ -1540,7 +1803,7 @@ $('dSetupBtn').onclick = openDriveSheet;
 $('saveClient').onclick = ()=>{
   const v = $('clientId').value.trim();
   if(v && !/\.apps\.googleusercontent\.com$/.test(v)){ toast('クライアントIDは「….apps.googleusercontent.com」で終わる文字列です'); return; }
-  pref.set('gClientId', v); Drive.tc = null; pref.set('gConsented', false);
+  pref.set('gClientId', v); Drive.tc = null; pref.set('gConsented2', false);
   $('driveSheet').hidden = true;
   if(!v || framed){ if(v) toast('保存しました。ログインは自分のサイトで開いたページで行ってください'); renderDrive(); return; }
   Drive.prepare().then(()=>{ renderDrive(); toast('保存しました。「Googleにログイン」を押してください'); });
@@ -1557,7 +1820,7 @@ $('copyOrigin').onclick = ()=>{
 const stage = $('stage');
 const S = { title:'', book:null, item:null, pages:[], spreads:[], idx:0,
   dir: pref.get('dir','rtl'), mode: pref.get('mode','auto'), flip: pref.get('flip', reduceMotion() ? 'none' : 'curl'),
-  coverSolo: pref.get('coverSolo', true), shiftOne:false, split: pref.get('split','off'), entries:null, coverTarget:null };
+  coverSolo: pref.get('coverSolo', true), shiftOne:false, split: pref.get('split','off'), entries:null, coverTarget:null, fit:'contain' };
 let readerToken = 0;
 let F = null;                    // page leaf currently turning
 let gridObs = null, thumbURLs = [];
@@ -1588,6 +1851,7 @@ function closeReader(fromHistory, keepHistory){
   closeSheets();
   if(document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(()=>{});
   $('reader').hidden = true; $('shelfView').hidden = false;
+  if(vObs){ vObs.disconnect(); vObs = null; } hideEnd(); stage.classList.remove('fit-w','fit-h','vert');
   document.title = '見開き漫画ビューア';
   if(!importing) wake(false);
   if(tab==='lib') renderShelf(); else renderDrive();
@@ -1610,6 +1874,7 @@ async function openBook(id){
   const b = books.get(id); if(!b) return;
   const tok = beginLoad(b.title);
   try{
+    await Sync.pullQuick();
     let entries;
     if(b.kind==='zip'){
       const blob = b.chunks ? await storedZip(id, b.chunks) : await DB.get('files', id);
@@ -1633,6 +1898,28 @@ function beginLoad(title){
   const l=$('loading'); l.hidden=false; l.textContent='読み込み中…';
   return readerToken;
 }
+const FITS = ['contain','width','height','vertical'];
+const FIT_LABEL = {contain:'全体', width:'横幅', height:'縦幅', vertical:'縦スクロール'};
+const FIT_ICON = {
+  contain:'<rect x="5" y="3" width="14" height="18" rx="1"/>',
+  width:'<path d="M3 12h18M6 9l-3 3 3 3M18 9l3 3-3 3"/><path d="M8 4v16M16 4v16" opacity=".45"/>',
+  height:'<path d="M12 3v18M9 6l3-3 3 3M9 18l3 3 3-3"/><path d="M4 8h16M4 16h16" opacity=".45"/>',
+  vertical:'<rect x="7" y="2" width="10" height="6" rx="1"/><rect x="7" y="10" width="10" height="6" rx="1"/><path d="M9 20h6"/>'};
+const isVert = () => S.fit==='vertical';
+const bookKey = () => !S.book ? 'x' : S.book.kind==='sample' ? 'sample' : S.book.kind==='remote' ? S.book.key : 'lib:'+S.book.id;
+function applyFit(){
+  stage.classList.toggle('fit-w', S.fit==='width'); stage.classList.toggle('fit-h', S.fit==='height'); stage.classList.toggle('vert', S.fit==='vertical');
+  $('fitIcon').innerHTML = FIT_ICON[S.fit]; $('fitLbl').textContent = FIT_LABEL[S.fit];
+}
+$('fitBtn').onclick = ()=>{
+  if(!S.pages.length) return;
+  const cp = curPage();
+  S.fit = FITS[(FITS.indexOf(S.fit)+1) % FITS.length];
+  pref.set('fit:'+bookKey(), S.fit); pref.set('fitLast', S.fit);
+  if(F){ cancelAnimationFrame(F.raf); F = null; }
+  applyFit(); resetZoom(); buildSpreads(cp); render();
+  toast({contain:'ページ全体を表示します', width:'横幅いっぱいに表示します（上下にスクロール）', height:'縦幅いっぱいに表示します（左右にスクロール）', vertical:'縦スクロールで続けて読みます'}[S.fit], 2200);
+};
 const makePages = entries => entries.map((e,k)=>({src:k, half:null, getBlob:e.getBlob, url:null, w:0, h:0, wide:false, p:null}));
 async function cropHalf(blob, side){
   const bmp = await createImageBitmap(blob);
@@ -1670,6 +1957,8 @@ function resetPages(){
 function startReading(title, entries, book, meta, item){
   S.title = title; S.book = book; S.item = item; S.shiftOne=false; $('shiftOne').checked=false;
   S.entries = entries; S.pages = makePages(entries);
+  { const last = pref.get('fitLast','contain'); S.fit = pref.get('fit:'+bookKey(), null) || (last==='vertical' ? 'contain' : last); if(!FITS.includes(S.fit)) S.fit = 'contain'; }
+  applyFit(); hideEnd();
   S.coverTarget = book && (book.kind==='zip' || book.kind==='pages') ? {type:'lib', id:book.id} : (item && item.ck ? {type:'drive', ck:item.ck} : null);
   $('coverBtn').hidden = !S.coverTarget;
   $('bookMeta').textContent = meta;
@@ -1714,7 +2003,7 @@ function loginLost(){
 }
 
 const stageW = () => stage.clientWidth, stageH = () => stage.clientHeight;
-function effMode(){ return S.mode==='auto' ? (stageW() > stageH()*1.05 ? 'spread':'single') : S.mode; }
+function effMode(){ if(isVert()) return 'single'; return S.mode==='auto' ? (stageW() > stageH()*1.05 ? 'spread':'single') : S.mode; }
 function buildSpreads(keepPage){
   const P=S.pages, out=[];
   if(effMode()==='single') P.forEach((_,i)=>out.push([i]));
@@ -1748,13 +2037,21 @@ function spreadEl(sp){
   else { d.className='spread one'; if(sp) d.appendChild(pageImg(sp[0])); }
   return d;
 }
-function clearStage(){ stage.querySelectorAll('.spread,.flipbox').forEach(n=>{ if(!n.closest('.flipbox') || n.classList.contains('flipbox')) n.remove(); }); }
+function clearStage(){ stage.querySelectorAll('.vlist').forEach(n=>n.remove()); stage.querySelectorAll('.spread,.flipbox').forEach(n=>{ if(!n.closest('.flipbox') || n.classList.contains('flipbox')) n.remove(); }); }
+function startScroll(){
+  if(S.fit==='width') stage.scrollTop = 0;
+  else if(S.fit==='height') stage.scrollLeft = S.dir==='rtl' ? stage.scrollWidth : 0;   // right-bound books start at the right
+}
 function render(){
   if(!S.spreads.length) return;
   if(F){ cancelAnimationFrame(F.raf); F=null; }
+  hideEnd();
+  if(isVert()){ renderVertical(); return; }
   clearStage(); resetZoom();
   const sp = S.spreads[S.idx];
-  stage.insertBefore(spreadEl(sp), stage.firstChild);
+  const el = spreadEl(sp);
+  stage.insertBefore(el, stage.firstChild);
+  if(S.fit!=='contain'){ startScroll(); el.querySelectorAll('img').forEach(im=>im.addEventListener('load', startScroll, {once:true})); }
   for(const k of [S.idx+1, S.idx+2, S.idx-1]) (S.spreads[k]||[]).forEach(i=>ensure(i));
   S.pages.forEach((pg,i)=>{ if(pg.url && Math.abs(i-sp[0])>14){ URL.revokeObjectURL(pg.url); pg.url=null; pg.p=null; } });
   const sl=$('slider'); sl.value=S.idx; sl.style.direction=S.dir;
@@ -1764,6 +2061,92 @@ function render(){
   savePos(sp[sp.length-1]);
   markGrid();
 }
+
+/* vertical scrolling: all pages in one column, loaded as they come near */
+let vObs = null, vRaf = 0, vEndShown = false;
+function renderVertical(){
+  clearStage(); resetZoom(); vEndShown = false;
+  const box = document.createElement('div'); box.className = 'vlist';
+  stage.insertBefore(box, stage.firstChild);
+  const W = box.clientWidth || stageW();
+  S.pages.forEach((pg,i)=>{
+    const d = document.createElement('div'); d.className = 'vpage'; d.dataset.i = i;
+    d.style.height = Math.round(W * (pg.w && pg.h ? pg.h/pg.w : 1.42)) + 'px';
+    const im = document.createElement('img'); im.alt = `${i+1}ページ`; im.decoding = 'async'; im.dataset.i = i;
+    d.append(im); box.append(d);
+  });
+  if(vObs) vObs.disconnect();
+  vObs = new IntersectionObserver(ents=>{ for(const en of ents) if(en.isIntersecting) loadV(en.target); }, {root:stage, rootMargin:'150% 0px'});
+  box.querySelectorAll('.vpage').forEach(d=>vObs.observe(d));
+  const target = box.children[S.idx]; stage.scrollTop = target ? target.offsetTop : 0;
+  vShow(S.idx);
+}
+function loadV(d){
+  const i = +d.dataset.i;
+  ensure(i).then(pg=>{
+    if(!pg || !d.isConnected || !pg.url) return;
+    const im = d.querySelector('img'); if(im.getAttribute('src')!==pg.url) im.src = pg.url;
+    const nh = Math.round(d.clientWidth * pg.h / pg.w), oh = d.offsetHeight;
+    if(Math.abs(nh-oh) > 1){ const above = d.offsetTop + oh <= stage.scrollTop + 1; d.style.height = nh+'px'; if(above) stage.scrollTop += nh-oh; }
+  });
+}
+function vShow(k){
+  S.idx = k;
+  const sl = $('slider'); sl.value = k; sl.style.direction = S.dir;
+  $('count').innerHTML = `<b>${k+1}</b> / ${S.pages.length}`;
+  savePos(k); markGrid();
+}
+function vScroll(){
+  const box = stage.querySelector('.vlist'); if(!box) return;
+  const kids = box.children, y = stage.scrollTop + stageH()*0.35;
+  let lo = 0, hi = kids.length-1, k = 0;
+  while(lo<=hi){ const m = (lo+hi)>>1; if(kids[m].offsetTop <= y){ k = m; lo = m+1; } else hi = m-1; }
+  if(k!==S.idx) vShow(k);
+  S.pages.forEach((pg,i)=>{ if(pg.url && Math.abs(i-k) > 10){ const im = kids[i] && kids[i].querySelector('img'); if(im) im.removeAttribute('src'); URL.revokeObjectURL(pg.url); pg.url = null; pg.p = null; } });
+  const atEnd = stage.scrollTop + stageH() >= stage.scrollHeight - 4;
+  if(atEnd && !vEndShown){ vEndShown = true; showEnd(); }
+  else if(vEndShown && stage.scrollTop + stageH() < stage.scrollHeight - 240){ vEndShown = false; hideEnd(); }
+}
+stage.addEventListener('scroll', ()=>{ if(!isVert()) return; cancelAnimationFrame(vRaf); vRaf = requestAnimationFrame(vScroll); }, {passive:true});
+function vGoTo(n, smooth){
+  const box = stage.querySelector('.vlist'); const t = box && box.children[n];
+  if(t) stage.scrollTo({top:t.offsetTop, behavior: smooth ? 'smooth' : 'auto'});
+}
+
+/* next volume: series name + volume number read from the title */
+function volInfo(title){
+  const s = String(title||'').normalize('NFKC').replace(/_/g,' ').trim();
+  const m = s.match(/^(.*?)[\s\-.]*(?:v|vol\.?|volume|第)?\s*(\d{1,4})(?:\s*[-~〜]\s*(\d{1,4}))?\s*(?:巻|話)?\s*[a-z]?\s*$/i);
+  if(!m) return null;
+  const series = m[1].toLowerCase().replace(/[\s\-.]+/g,' ').trim();
+  return series ? {series, from:+m[2], to:+(m[3]||m[2])} : null;
+}
+function nextVolume(){
+  const cur = S.book, vi = volInfo(S.title); if(!cur || !vi) return null;
+  const c = [];
+  if(cur.kind==='zip' || cur.kind==='pages'){
+    for(const b of books.values()){ if(b.id===cur.id) continue; const v = volInfo(b.title);
+      if(v && v.series===vi.series && v.from>vi.to) c.push({v, title:b.title, open:()=>openBook(b.id)}); }
+  } else if(S.item && S.item.siblings){
+    for(const it of S.item.siblings()){ if(it.key===S.item.key) continue; const v = volInfo(titleOf(it.name));
+      if(v && v.series===vi.series && v.from>vi.to) c.push({v, title:titleOf(it.name), open:()=>openDriveArchive(it)}); }
+  }
+  c.sort((a,b)=>a.v.from-b.v.from || coll.compare(a.title,b.title));
+  return c[0] || null;
+}
+function showEnd(){
+  const nv = nextVolume();
+  $('epTitle').textContent = '最後のページです';
+  $('epNext').textContent = nv ? `次の巻：${nv.title}` : (volInfo(S.title) ? '次の巻は見つかりませんでした（同じフォルダ・本棚にある続きの巻を探します）' : '');
+  $('epNext').hidden = !$('epNext').textContent;
+  $('epGo').hidden = !nv;
+  $('epGo').onclick = ()=>{ hideEnd(); if(nv) nv.open(); };
+  $('endPanel').hidden = false;
+  return true;
+}
+function hideEnd(){ const p = $('endPanel'); if(p) p.hidden = true; }
+$('epBack').onclick = ()=>{ hideEnd(); closeReader(false); };
+$('epStay').onclick = ()=>hideEnd();
 let posT;
 function savePos(p){
   const b = S.book; if(!b || b.kind==='sample') return;
@@ -1771,7 +2154,12 @@ function savePos(p){
   b.lastPage = e; b.lastRead = Date.now(); b.opened = true;
   clearTimeout(posT);
   if(b.kind==='remote'){ const rec={key:b.key, lastPage:e, pages:total, lastRead:b.lastRead}; remotePos.set(b.key, rec); posT=setTimeout(()=>DB.put('remote', rec).catch(()=>{}), 400); }
-  else posT = setTimeout(()=>DB.put('books', b).catch(()=>{}), 400);
+  else {
+    posT = setTimeout(()=>DB.put('books', b).catch(()=>{}), 400);
+    const sk = syncKeyOf(b);
+    if(sk && sk.startsWith('f:')){ const rec = {key:sk, lastPage:e, pages:total, lastRead:b.lastRead}; remotePos.set(sk, rec); DB.put('remote', rec).catch(()=>{}); }
+  }
+  Sync.notePos(syncKeyOf(b), {lastPage:e, pages:total, lastRead:b.lastRead, title:b.title});
 }
 
 /* =================================================================
@@ -1933,7 +2321,7 @@ function finishFlip(completed){
   if(dirty) buildSpreads(curPage());
   render();
 }
-const flipping = () => S.flip==='curl' && !reduceMotion();
+const flipping = () => S.flip==='curl' && !reduceMotion() && S.fit==='contain';
 
 /* navigation */
 let hintT;
@@ -1944,9 +2332,10 @@ function go(k, animate=true){
   if(F) finishFlip(true);
   if(!S.spreads.length) return;
   const n = Math.max(0, Math.min(S.spreads.length-1, k));
+  if(isVert()){ if(k > S.spreads.length-1) showEnd(); else vGoTo(n, animate); return; }
   if(n===S.idx){
     if(k===S.idx) return;
-    edgeHint(k>S.idx);
+    if(k>S.idx) showEnd(); else edgeHint(false);
     if(animate && flipping() && Z.s===1){ startFlip(k>S.idx); const C={...F.C}; foldTo({x:F.w*0.2, y:C.y + (C.y>F.h/2?-1:1)*F.h*0.04}, 170, ()=>foldTo(C, 230, ()=>finishFlip(false))); }
     return;
   }
@@ -1957,7 +2346,27 @@ function go(k, animate=true){
   }
   S.idx=n; render();
 }
-const next=()=>go(S.idx+1), prev=()=>go(S.idx-1);
+// inside a page that is larger than the screen, move through it first
+function scrollStep(dir){
+  const W = stageW(), H = stageH();
+  if(S.fit==='width'){
+    if(dir>0 && stage.scrollTop + H < stage.scrollHeight - 4){ stage.scrollBy({top:H*0.85, behavior:'smooth'}); return true; }
+    if(dir<0 && stage.scrollTop > 4){ stage.scrollBy({top:-H*0.85, behavior:'smooth'}); return true; }
+  } else if(S.fit==='height'){
+    const fwd = S.dir==='rtl' ? -1 : 1, max = stage.scrollWidth - W;
+    const d = dir*fwd;
+    if(d<0 && stage.scrollLeft > 4){ stage.scrollBy({left:-W*0.85, behavior:'smooth'}); return true; }
+    if(d>0 && stage.scrollLeft < max - 4){ stage.scrollBy({left:W*0.85, behavior:'smooth'}); return true; }
+  }
+  return false;
+}
+function vStep(dir){
+  const H = stageH();
+  if(dir>0 && stage.scrollTop + H >= stage.scrollHeight - 4){ showEnd(); return; }
+  stage.scrollBy({top: dir*H*0.85, behavior:'smooth'});
+}
+function next(){ if(isVert()) return vStep(1); if(scrollStep(1)) return; go(S.idx+1); }
+function prev(){ if(isVert()) return vStep(-1); if(scrollStep(-1)) return; go(S.idx-1); }
 const leftward=()=> S.dir==='rtl'?next():prev();
 const rightward=()=> S.dir==='rtl'?prev():next();
 function toggleUI(){ document.body.classList.toggle('immersive'); requestAnimationFrame(onResize); }
@@ -1978,6 +2387,7 @@ stage.addEventListener('pointerdown', e=>{
   pts.set(e.pointerId, local(e));
   if(pts.size===1){ G = newOne(local(e)); }
   else if(pts.size===2){
+    if(S.fit!=='contain'){ G = null; return; }
     if(G && G.flip && F) foldTo({...F.C}, 160, ()=>finishFlip(false));
     const [a,b]=[...pts.values()]; G = {type:'pinch', d0:dist(a,b)||1, s0:Z.s, cx:((a.x+b.x)/2 - Z.x)/Z.s, cy:((a.y+b.y)/2 - Z.y)/Z.s}; clearTimeout(tapTimer);
   }
@@ -2020,7 +2430,7 @@ function pointerEnd(e){
   if(g.flip && F){
     const v = F.mirror ? -g.v : g.v;   // px/ms in the turning direction
     const C = {...F.C};
-    if(e.type==='pointercancel' || !F.hasTarget){ if(!F.hasTarget) edgeHint(F.target>S.idx); foldTo(C, 220, ()=>finishFlip(false)); return; }
+    if(e.type==='pointercancel' || !F.hasTarget){ if(!F.hasTarget){ F.target>S.idx ? showEnd() : edgeHint(false); } foldTo(C, 220, ()=>finishFlip(false)); return; }
     const prog = F.T.x / (2*F.w);
     if(prog > 0.42 || (v > 0.35 && prog > 0.02)) foldTo({x:2*F.w, y:C.y}, Math.max(150, (1-prog)*560), ()=>finishFlip(true));
     else foldTo(C, Math.max(120, prog*500), ()=>finishFlip(false));
@@ -2029,14 +2439,14 @@ function pointerEnd(e){
   if(e.type==='pointercancel') return;
   const dx=p.x-g.sx, dy=p.y-g.sy;
   if(!g.moved && Date.now()-g.t < 400) onTap(p);
-  else if(!flipping() && Z.s===1 && Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)*1.4){ dx>0 ? leftward() : rightward(); }
+  else if(!flipping() && !isVert() && Z.s===1 && Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)*1.4){ const fwd = (S.dir==='rtl') === (dx>0); go(S.idx + (fwd ? 1 : -1)); }
 }
 stage.addEventListener('pointerup', pointerEnd);
 stage.addEventListener('pointercancel', pointerEnd);
 function onTap(p){
   const now=Date.now(), w=stageW();
   const dbl = lastTap && now-lastTap.t<300 && Math.hypot(p.x-lastTap.x, p.y-lastTap.y)<40;
-  if(dbl){ clearTimeout(tapTimer); lastTap=null; if(Z.s>1) resetZoom(); else zoomAt(p.x, p.y, 2.5); return; }
+  if(dbl && S.fit==='contain'){ clearTimeout(tapTimer); lastTap=null; if(Z.s>1) resetZoom(); else zoomAt(p.x, p.y, 2.5); return; }
   lastTap = {t:now, x:p.x, y:p.y};
   if(Z.s>1) return;
   const x = p.x / w;
@@ -2045,18 +2455,22 @@ function onTap(p){
   else { clearTimeout(tapTimer); tapTimer = setTimeout(()=>{ if(lastTap && lastTap.t===now) toggleUI(); }, 280); }
 }
 let wheelT=0;
-stage.addEventListener('wheel', e=>{ e.preventDefault(); if(e.ctrlKey){ const p=local(e); zoomAt(p.x,p.y,Math.max(1,Math.min(5,Z.s*(e.deltaY<0?1.15:0.87)))); return; }
+stage.addEventListener('wheel', e=>{ if(S.fit!=='contain' && !e.ctrlKey) return; e.preventDefault(); if(e.ctrlKey){ if(S.fit!=='contain') return; const p=local(e); zoomAt(p.x,p.y,Math.max(1,Math.min(5,Z.s*(e.deltaY<0?1.15:0.87)))); return; }
   const now=Date.now(); if(now-wheelT<260) return; wheelT=now;
   const d=Math.abs(e.deltaY)>=Math.abs(e.deltaX)?e.deltaY:e.deltaX; if(d>0) next(); else if(d<0) prev(); }, {passive:false});
-$('slider').addEventListener('input', e=>{ if(F){ cancelAnimationFrame(F.raf); F=null; } S.idx=+e.target.value; render(); });
+$('slider').addEventListener('input', e=>{ if(F){ cancelAnimationFrame(F.raf); F=null; } if(isVert()){ vGoTo(+e.target.value, false); return; } S.idx=+e.target.value; render(); });
 
 document.addEventListener('keydown', e=>{
+  if(!$('setSheet').hidden){ const kt = $('keyTest'); if(kt) kt.textContent = `${e.key || '?'}（${e.code || 'コードなし'} / ${e.keyCode || 0}）`; }
   if(!$('cropper').hidden){ if(e.key==='Escape') closeCropper(false); return; }
   const open = document.querySelector('.sheet-back:not([hidden])');
   if(e.key==='Escape'){ if(open){ open.hidden=true; return; } if(!$('reader').hidden){ if(document.body.classList.contains('immersive')) toggleUI(); else closeReader(false); } return; }
   if(open || $('reader').hidden) return;
   if(e.target.closest && e.target.closest('input')) return;
+  if(e.keyCode===174 || e.keyCode===175){ e.preventDefault(); e.keyCode===174 ? next() : prev(); return; }
   switch(e.key){
+    case 'AudioVolumeDown': case 'VolumeDown': case 'MediaTrackNext': e.preventDefault(); next(); break;
+    case 'AudioVolumeUp': case 'VolumeUp': case 'MediaTrackPrevious': e.preventDefault(); prev(); break;
     case 'ArrowLeft': leftward(); break;
     case 'ArrowRight': rightward(); break;
     case ' ': case 'PageDown': case 'ArrowDown': e.preventDefault(); e.shiftKey?prev():next(); break;
@@ -2173,18 +2587,21 @@ function drawFrame(){ const f = CR.f; Object.assign($('cropFrame').style, {left:
 }
 async function saveCover(blob, custom){
   const T = S.coverTarget; if(!T || !blob) return false;
+  const t = Date.now();
   try{
     if(T.type==='lib'){
       const b = books.get(T.id); if(!b) return false;
       await DB.put('covers', blob, T.id);
       const u = coverURL.get(T.id); if(u) URL.revokeObjectURL(u);
       coverURL.set(T.id, URL.createObjectURL(blob));
-      b.customCover = custom; await DB.put('books', b);
+      b.customCover = custom; b.coverT = t; await DB.put('books', b);
+      const sk = syncKeyOf(b); if(sk) Sync.pushCover('lib:'+sk, blob, {custom, t});
     } else {
       const prev = dcover.get(T.ck) || {};
-      await DB.put('covers', {cover:blob, vols:prev.vols||0, custom}, T.ck);
+      await DB.put('covers', {cover:blob, vols:prev.vols||0, custom, t}, T.ck);
       if(prev.url) URL.revokeObjectURL(prev.url);
       dcover.set(T.ck, {url:URL.createObjectURL(blob), vols:prev.vols||0});
+      Sync.pushCover(T.ck, blob, {vols:prev.vols||0, custom, t});
     }
     return true;
   }catch(e){ toast(storageError(e).message); return false; }
