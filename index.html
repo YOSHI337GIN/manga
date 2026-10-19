@@ -356,7 +356,7 @@ kbd{font-family:inherit;background:var(--raise);border:1px solid var(--line);bor
         <b>iPhone</b>：共有ボタン（□に↑）→「ホーム画面に追加」（Safari・Chromeどちらでも可）。<br>
         入れると、専用アイコンからアドレスバーなしの全画面で開き、電波がなくても起動して本棚の本を読めます。ネットにつながっているときは、毎回最新の版に自動で更新されます。</p></div>
       <div class="row"><h3>ドライブをのぞく</h3>
-      <p class="note"><b>ドライブ</b> タブで、Googleドライブのフォルダを表紙つきで見られます。ZIPは目次と1枚目だけ、RARは先頭の数MBだけを取り寄せて表紙を作るので、大きなファイルでもすぐ並びます。タップすると保存せずにそのまま読めます（ZIPは読むページだけ取り寄せ、RARは全体をダウンロードしてから開きます）。<b>↓</b> で本棚に保存すると、ネットなしでも読めます。最初に一度だけ「準備・設定」が必要です。</p></div>
+      <p class="note"><b>ドライブ</b> タブで、Googleドライブのフォルダを表紙つきで見られます。ZIPは目次と1枚目だけ、RARは先頭の数MBだけを取り寄せて表紙を作るので、大きなファイルでもすぐ並びます。タップすると保存せずにそのまま読めます。ZIPは読むページだけを取り寄せ、RARは先頭から読み込みながら、届いたページから表示します（「ソリッド形式」のRARや、RARの中に別の圧縮ファイルが入っているものは、全体を読み込んでから開きます）。<b>↓</b> で本棚に保存すると、ネットなしでも読めます。最初に一度だけ「準備・設定」が必要です。</p></div>
       <div class="row"><h3>端末から取り込む</h3>
       <p class="note"><b>本を追加</b> → ファイル選択画面の左上 <b>≡</b> → <b>ドライブ</b> などから、ZIP・RARを長押しで複数選んで <b>選択</b>。</p></div>
       <div class="row"><h3>対応している形式</h3>
@@ -547,6 +547,14 @@ async function peek(size, parts){
 onmessage = e => {
   const m = e.data;
   if(m.type==='init'){ wasm = m.wasm; return; }
+  if(m.type==='one'){
+    q = q.then(async()=>{
+      const ex = await self.UnrarLib.createExtractorFromData({wasmBinary: wasm.slice(0), data: m.data});
+      for(const x of ex.extract({files:h=>!h.flags.directory}).files){ if(x.extraction) return own(x.extraction); }
+      throw new Error('展開できませんでした');
+    }).then(u8 => postMessage({id:m.id, ok:true, r:{u8}}, [u8.buffer]), err => postMessage({id:m.id, ok:false, msg:String(err && err.message || err)}));
+    return;
+  }
   q = q.then(()=>peek(m.size, m.parts)).then(
     r => { const tr=[]; if(r.image) tr.push(r.image.u8.buffer); if(r.inner) tr.push(r.inner.u8.buffer); postMessage({id:m.id, ok:true, r}, tr); },
     err => postMessage({id:m.id, ok:false, msg:String(err && err.message || err)}));
@@ -554,7 +562,7 @@ onmessage = e => {
 </script>
 <script>
 (() => {
-const APP_VERSION = '2026.10.19-6';
+const APP_VERSION = '2026.10.19-7';
 const $ = id => document.getElementById(id);
 const IMG = /\.(jpe?g|png|gif|webp|avif|bmp)$/i;
 const ARCH = /\.(zip|cbz|rar|cbr)$/i;
@@ -796,6 +804,19 @@ function rarWorker(){
   }catch(e){ rarWDead = true; rarW = null; }
   return rarW;
 }
+function workerCall(msg, transfer){
+  const w = rarWorker(); if(!w) return Promise.reject(Object.assign(new Error('worker'), {dead:true}));
+  return new Promise((res, rej)=>{ const id = ++wSeq; wWait.set(id, {res, rej}); w.postMessage({...msg, id}, transfer||[]); });
+}
+async function rarOne(buf){
+  try{ return (await workerCall({type:'one', data:buf}, [buf])).u8; }
+  catch(e){ if(!e.dead) throw e; }
+  return withRar(async()=>{
+    const ex = await rarEngine(buf);
+    for(const x of ex.extract({files:h=>!h.flags.directory}).files){ if(x.extraction) return x.extraction; }
+    throw new Error('展開できませんでした');
+  });
+}
 async function rarPeek(size, parts){
   const w = rarWorker();
   if(w){
@@ -1001,6 +1022,153 @@ async function importContainer(name, blob, depth, ctx){
     const b = inner.get(nm); if(!b) continue; inner.delete(nm);
     await importContainer(nm, b, depth+1, ctx);
   }
+}
+
+
+/* =================================================================
+   RAR streaming: read the archive from the front in chunks and hand out each
+   page as soon as its bytes have arrived. Works for non-solid RAR4/RAR5:
+   stored pages are cut straight out of the data, compressed ones are unpacked
+   one file at a time from a tiny archive made of just that file.
+   ================================================================= */
+const RAR5_SIG = [0x52,0x61,0x72,0x21,0x1a,0x07,0x01,0x00], RAR4_SIG = [0x52,0x61,0x72,0x21,0x1a,0x07,0x00];
+function rdVint(u8, p){ let v = 0, m = 1, c; do{ if(p >= u8.length) return null; c = u8[p++]; v += (c & 0x7f) * m; m *= 128; }while(c & 0x80); return [v, p]; }
+function rar4Name(raw, unicode){
+  const z = raw.indexOf(0);
+  if(!unicode || z < 0){
+    try{ return new TextDecoder('utf-8', {fatal:true}).decode(z<0 ? raw : raw.subarray(0, z)); }
+    catch(e){ try{ return new TextDecoder('shift_jis').decode(z<0 ? raw : raw.subarray(0, z)); }catch(_){ return new TextDecoder().decode(raw); } }
+  }
+  // RAR 3.x/4.x compact unicode names
+  const name = raw.subarray(0, z), enc = raw.subarray(z+1), out = [];
+  let ep = 0, dp = 0, flags = 0, bits = 0; const high = enc[ep++] || 0;
+  while(ep < enc.length && dp < 2048){
+    if(bits === 0){ flags = enc[ep++]; bits = 8; }
+    switch(flags >> 6){
+      case 0: out[dp++] = enc[ep++]; break;
+      case 1: out[dp++] = enc[ep++] + (high << 8); break;
+      case 2: out[dp++] = enc[ep] + (enc[ep+1] << 8); ep += 2; break;
+      case 3: { let len = enc[ep++];
+        if(len & 0x80){ const corr = enc[ep++]; for(len = (len & 0x7f) + 2; len > 0; len--, dp++) out[dp] = ((name[dp] + corr) & 0xff) + (high << 8); }
+        else for(len += 2; len > 0; len--, dp++) out[dp] = name[dp];
+      } break;
+    }
+    flags = (flags << 2) & 0xff; bits -= 2;
+  }
+  let s = ''; for(const c of out) if(c !== undefined) s += String.fromCharCode(c);
+  return s;
+}
+function rar5Block(h, base){
+  const r = rdVint(h, 4); if(!r) return null;
+  const [hsize, p0] = r, total = p0 + hsize;
+  if(total > h.length) return null;
+  let p = p0, t, fl, extra = 0, data = 0;
+  [t, p] = rdVint(h, p); [fl, p] = rdVint(h, p);
+  if(fl & 1) [extra, p] = rdVint(h, p);
+  if(fl & 2) [data, p] = rdVint(h, p);
+  const b = {type:t, hdrOff:base, hdrLen:total, dataOff:base+total, dataSize:data, next:base+total+data};
+  if(t === 1){ const a = rdVint(h, p); b.solidArc = !!(a[0] & 4); b.volume = !!(a[0] & 1); }
+  if(t === 4) b.encHdr = true;
+  if(t === 2){
+    let ff, unp, attr, ci, os, nl;
+    [ff, p] = rdVint(h, p); [unp, p] = rdVint(h, p); [attr, p] = rdVint(h, p);
+    if(ff & 2) p += 4; if(ff & 4) p += 4;
+    [ci, p] = rdVint(h, p); [os, p] = rdVint(h, p); [nl, p] = rdVint(h, p);
+    b.name = new TextDecoder().decode(h.subarray(p, p+nl)).replace(/\\/g, '/');
+    b.dir = !!(ff & 1); b.method = (ci >> 7) & 7; b.solidFile = !!(ci & 0x40); b.unp = unp;
+    if(extra){ let q = total - extra; while(q < total){ const a = rdVint(h, q); if(!a) break; const tt = rdVint(h, a[1]); if(tt && tt[0] === 1) b.enc = true; q = a[1] + a[0]; } }
+  }
+  return b;
+}
+function rar4Block(h, base){
+  if(h.length < 7) return null;
+  const dv = new DataView(h.buffer, h.byteOffset, h.byteLength);
+  const type = h[2], flags = dv.getUint16(3, true), size = dv.getUint16(5, true);
+  if(size < 7) return {error:true};
+  if(size > h.length) return null;
+  const add = (type === 0x74 || (flags & 0x8000)) && size >= 11 ? dv.getUint32(7, true) : 0;
+  const b = {type, hdrOff:base, hdrLen:size, dataOff:base+size, dataSize:add, next:base+size+add};
+  if(type === 0x73){ b.solidArc = !!(flags & 0x08); b.volume = !!(flags & 0x01); b.encHdr = !!(flags & 0x80); }
+  if(type === 0x74 && size >= 32){
+    let pack = dv.getUint32(7, true), unp = dv.getUint32(11, true), np = 32;
+    const method = h[25], nsz = dv.getUint16(26, true);
+    if(flags & 0x100){ pack += dv.getUint32(32, true) * 4294967296; unp += dv.getUint32(36, true) * 4294967296; np = 40; }
+    b.dataSize = pack; b.next = base + size + pack; b.unp = unp;
+    const raw = h.subarray(np, np+nsz), z = raw.indexOf(0);
+    const plain = rar4Name(z < 0 ? raw : raw.subarray(0, z), false), ext = s => (s.match(/\.[^./]+$/) || [''])[0].toLowerCase();
+    b.name = rar4Name(raw, !!(flags & 0x200));
+    if(!b.name || ext(b.name) !== ext(plain)) b.name = plain;           // keep the extension trustworthy
+    b.name = b.name.replace(/\\/g, '/');
+    b.dir = (flags & 0xE0) === 0xE0; b.enc = !!(flags & 0x04); b.solidFile = !!(flags & 0x10); b.method = method === 0x30 ? 0 : 1;
+  }
+  return b;
+}
+function rarEndBlock(ver){
+  if(ver === 5){ const body = new Uint8Array([3, 5, 0, 0]), c = crc32(body); return new Uint8Array([c&255, (c>>>8)&255, (c>>>16)&255, (c>>>24)&255, ...body]); }
+  const hdr = new Uint8Array([0x7b, 0x00, 0x40, 0x07, 0x00]), c = crc32(hdr) & 0xffff;
+  return new Uint8Array([c&255, (c>>>8)&255, ...hdr]);
+}
+class RarStream {
+  constructor(file, first, step){ this.file = file; this.size = file.size; this.first = first || 3*1024*1024; this.step = step || 8*1024*1024;
+    this.chunks = []; this.have = 0; this.pos = 0; this.ver = 0; this.main = null; this.entries = []; this.sent = 0; this.ended = false; this.stopped = false; this.bad = ''; }
+  async fetchMore(){
+    if(this.have >= this.size || this.stopped) return false;
+    const end = Math.min(this.size, this.have + (this.have ? this.step : this.first));
+    const buf = await this.file.slice(this.have, end).arrayBuffer();
+    this.chunks.push({off:this.have, end, blob:new Blob([buf])}); this.have = end;
+    return true;
+  }
+  parts(off, len){ const out = []; for(const c of this.chunks){ if(c.end <= off || c.off >= off+len) continue; out.push(c.blob.slice(Math.max(0, off-c.off), Math.min(c.end, off+len) - c.off)); } return out; }
+  async bytes(off, len){ return new Uint8Array(await new Blob(this.parts(off, len)).arrayBuffer()); }
+  async parse(){
+    if(!this.ver){
+      const s = await this.bytes(0, Math.min(8, this.have));
+      if(RAR5_SIG.every((v,i)=>s[i]===v)){ this.ver = 5; this.pos = 8; }
+      else if(RAR4_SIG.every((v,i)=>s[i]===v)){ this.ver = 4; this.pos = 7; }
+      else { this.bad = 'RARではありません'; return; }
+    }
+    while(!this.ended && this.have - this.pos >= 7){
+      const h = await this.bytes(this.pos, Math.min(this.have - this.pos, 65536));
+      const b = this.ver === 5 ? rar5Block(h, this.pos) : rar4Block(h, this.pos);
+      if(!b){ if(h.length >= 65536) this.bad = '見出しが大きすぎます'; break; }
+      if(b.error){ this.bad = '壊れたRARです'; break; }
+      const isMain = this.ver === 5 ? b.type === 1 : b.type === 0x73;
+      const isFile = this.ver === 5 ? b.type === 2 : b.type === 0x74;
+      const isEnd = this.ver === 5 ? b.type === 5 : b.type === 0x7b;
+      if(isMain){ this.main = b; if(b.solidArc) this.bad = 'solid'; if(b.volume) this.bad = 'volume'; if(b.encHdr) this.bad = 'enc'; }
+      if(b.encHdr) this.bad = 'enc';
+      if(isFile){ if(b.solidFile) this.bad = 'solid'; this.entries.push(b); }
+      if(isEnd) this.ended = true;
+      this.pos = b.next;
+      if(this.bad) break;
+    }
+  }
+  ready(){ const out = []; while(this.sent < this.entries.length){ const e = this.entries[this.sent]; if(e.dataOff + e.dataSize > this.have) break; out.push(e); this.sent++; } return out; }
+  finished(){ return this.ended || this.have >= this.size || this.stopped; }
+  async page(e){
+    const type = mimeOf(e.name);
+    if(e.method === 0) return new Blob(this.parts(e.dataOff, e.dataSize), {type});
+    let head = new Uint8Array([...(this.ver === 5 ? RAR5_SIG : RAR4_SIG), ...await this.bytes(this.main.hdrOff, this.main.hdrLen)]);
+    if(this.ver === 5) head = noQuickOpen(head);
+    const fh = await this.bytes(e.hdrOff, e.hdrLen);
+    const buf = await new Blob([head, fh, ...this.parts(e.dataOff, e.dataSize), rarEndBlock(this.ver)]).arrayBuffer();
+    return new Blob([await rarOne(buf)], {type});
+  }
+  // read until the first page is ready; 'stream' when this archive can be read while loading
+  async prepare(){
+    for(;;){
+      const more = await this.fetchMore();
+      await this.parse();
+      if(this.bad) return 'full';
+      const rel = this.entries.filter(e=>!e.dir && !SKIP.test(e.name) && (IMG.test(e.name) || ARCH.test(e.name)));
+      if(rel.some(e=>e.enc) || (rel[0] && ARCH.test(rel[0].name))) return 'full';     // locked, or more archives inside
+      const firstImg = rel.find(e=>IMG.test(e.name));
+      if(firstImg && firstImg.dataOff + firstImg.dataSize <= this.have) return 'stream';
+      if(!more || this.finished()) return rel.length ? 'stream' : 'full';
+    }
+  }
+  async next(){ const more = await this.fetchMore(); await this.parse(); return more && !this.finished() && !this.bad; }
+  stop(){ this.stopped = true; }
 }
 
 /* cover + volume count for a file that has not been imported (local Blob or remote RangeFile) */
@@ -1786,7 +1954,14 @@ async function openDriveArchive(item){
       if(!idx.images.length) throw new Error('この中に画像が見つかりませんでした');
       startReading(titleOf(item.name), idx.images, remoteBook(item), `ドライブから直接・${idx.images.length}ページ`, item);
     } else if(kind==='rar'){
-      step(`RARは全体を読み込んでから開きます（${fmtBytes(file.size)}）`);
+      step('RARを読み込み中…');
+      const st = new RarStream(file);
+      let mode = 'full';
+      try{ mode = await st.prepare(); }catch(e){ if(e instanceof LoginNeeded) throw e; mode = 'full'; }
+      if(tok!==readerToken){ st.stop(); return; }
+      if(mode==='stream'){ startStreaming(st, item, tok); return; }
+      st.stop();
+      step(st.bad==='solid' ? `この RAR は「ソリッド形式」のため、全体を読み込んでから開きます（${fmtBytes(file.size)}）` : `RARは全体を読み込んでから開きます（${fmtBytes(file.size)}）`);
       const {pages, inner} = await rarPagesInMemory(file, step);
       if(tok!==readerToken) return;
       if(inner.length && pages.length < LOOSE_MIN){
@@ -1859,6 +2034,7 @@ function closeReader(fromHistory, keepHistory){
   if($('reader').hidden) return;
   if(!$('cropper').hidden){ $('cropper').hidden = true; if(CR.url){ URL.revokeObjectURL(CR.url); CR.url = null; } }
   readerToken++;
+  if(S.streaming){ S.streaming.st.stop(); S.streaming = null; }
   clearTimeout(uiT); document.body.classList.remove('ui-hidden');
   if(F){ cancelAnimationFrame(F.raf); F=null; }
   S.pages.forEach(p=>p.url && URL.revokeObjectURL(p.url));
@@ -1907,6 +2083,7 @@ async function openBook(id){
 function openSample(){ beginLoad(sampleBook.title); startReading(sampleBook.title, sampleBook.items, sampleBook, '見本データ。ページの端を押さえて動かすと本のようにめくれます', null); }
 function beginLoad(title){
   closeSheets(); readerToken++;
+  if(S.streaming){ S.streaming.st.stop(); S.streaming = null; }
   if(F){ cancelAnimationFrame(F.raf); F=null; }
   S.pages.forEach(p=>p.url && URL.revokeObjectURL(p.url)); S.pages=[]; S.spreads=[]; clearStage(); resetZoom();
   showReader();
@@ -1970,8 +2147,86 @@ function resetPages(){
   S.pages = makePages(S.entries);
   buildSpreads(src); buildGrid(); render();
 }
+/* reading a RAR while it downloads: pages are added as their bytes arrive */
+function streamMeta(){ const s = S.streaming; if(!s) return; $('bookMeta').textContent = `ドライブから・読み込み中 ${Math.round(s.st.have / Math.max(1, s.st.size) * 100)}%（${S.entries.length}ページまで）`; }
+function startStreaming(st, item, tok){
+  const imgs = list => list.filter(e=>!e.dir && !e.enc && !SKIP.test(e.name) && IMG.test(e.name)).map(e=>({name:e.name, getBlob:()=>st.page(e)}));
+  const book = remoteBook(item);
+  const want = book.lastPage || 0;
+  const first = imgs(st.ready());
+  S.streaming = {st, want};
+  startReading(titleOf(item.name), first, book, '', item);
+  streamMeta();
+  (async()=>{
+    try{
+      for(;;){
+        const more = await st.next();
+        if(tok!==readerToken || !S.streaming){ st.stop(); return; }
+        appendPages(imgs(st.ready()));
+        streamMeta();
+        if(!more) break;
+      }
+      if(st.bad && st.bad!=='solid') throw new Error('RARの途中で読めない部分がありました');
+    }catch(e){
+      if(tok!==readerToken) return;
+      toast(e instanceof LoginNeeded ? 'ログインが切れたため、途中までしか読み込めませんでした。ログインし直して開き直してください' : (e.message || '読み込みが途中で止まりました'), 6000);
+    }
+    if(tok!==readerToken) return;
+    const s = S.streaming; S.streaming = null;
+    finishStreaming(s);
+  })();
+}
+function appendPages(list){
+  if(!list.length) return;
+  const s = S.streaming, base = S.entries.length, before = JSON.stringify(S.spreads[S.idx] || []);
+  const cur = S.pages[curPage()];
+  S.entries.push(...list);
+  list.forEach((e,k)=>S.pages.push({src:base+k, half:null, getBlob:e.getBlob, url:null, w:0, h:0, wide:false, p:null}));
+  // reopening where you left off: jump there once that page has arrived
+  if(s && s.want && !S.userMoved && s.want < S.entries.length){
+    const k = S.pages.findIndex(p=>p.src===s.want); s.want = 0;
+    buildSpreads(Math.max(0,k)); buildGrid(); render(); toast(`前回の続き（${k+1}ページ）から表示しています`); return;
+  }
+  const at = Math.max(0, S.pages.indexOf(cur));
+  buildSpreads(at);
+  if(isVert()) appendVert(S.pages.length - list.length);
+  else if(JSON.stringify(S.spreads[S.idx] || []) !== before) render();
+  else showCount();
+  buildGrid();
+}
+function finishStreaming(s){
+  // put pages in name order if the archive was not stored that way
+  const names = S.entries.map(e=>e.name), sorted = [...names].sort(coll.compare);
+  if(names.some((n,i)=>n!==sorted[i])){
+    const cur = S.pages[curPage()], curName = cur ? S.entries[cur.src].name : null;
+    S.entries = S.entries.slice().sort((a,b)=>coll.compare(a.name,b.name));
+    S.pages.forEach(p=>p.url && URL.revokeObjectURL(p.url));
+    S.pages = makePages(S.entries);
+    const k = Math.max(0, S.entries.findIndex(e=>e.name===curName));
+    buildSpreads(k); render();
+  } else showCount();
+  buildGrid();
+  if(s && s.want && !S.userMoved && s.want < S.entries.length){ buildSpreads(s.want); render(); }
+  $('bookMeta').textContent = `ドライブから・${S.entries.length}ページ`;
+}
+function appendVert(from){
+  const box = stage.querySelector('.vlist'); if(!box || !vObs) return;
+  const W = box.clientWidth || stageW();
+  for(let i=from; i<S.pages.length; i++){
+    const d = document.createElement('div'); d.className = 'vpage'; d.dataset.i = i; d.style.height = Math.round(W*1.42)+'px';
+    const im = document.createElement('img'); im.alt = `${i+1}ページ`; im.decoding = 'async'; im.dataset.i = i;
+    d.append(im); box.append(d); vObs.observe(d);
+  }
+  showCount();
+}
+function showCount(){
+  const more = S.streaming ? '…' : '';
+  if(isVert()){ $('count').innerHTML = `<b>${S.idx+1}</b> / ${S.pages.length}${more}`; return; }
+  const sp = S.spreads[S.idx] || [0], a = sp[0]+1, b = sp[sp.length-1]+1;
+  $('count').innerHTML = `<b>${a===b?a:a+'–'+b}</b> / ${S.pages.length}${more}`;
+}
 function startReading(title, entries, book, meta, item){
-  S.title = title; S.book = book; S.item = item; S.shiftOne=false; $('shiftOne').checked=false;
+  S.title = title; S.book = book; S.item = item; S.shiftOne=false; $('shiftOne').checked=false; S.userMoved = false;
   S.entries = entries; S.pages = makePages(entries);
   document.fullscreenElement ? hideUI() : showUI();
   { const last = pref.get('fitLast','contain'); S.fit = pref.get('fit:'+bookKey(), null) || (last==='vertical' ? 'contain' : last); if(!FITS.includes(S.fit)) S.fit = 'contain'; }
@@ -1982,6 +2237,7 @@ function startReading(title, entries, book, meta, item){
   $('rSave').hidden = !(item && item.src && !savedSrc(item.src));
   document.title = title + ' – 見開き漫画ビューア';
   const start = book && book.lastPage < S.pages.length ? book.lastPage : 0;
+  if(S.streaming && start===book.lastPage) S.streaming.want = 0;
   buildSpreads(start);
   $('loading').hidden = true;
   buildGrid(); render();
@@ -2073,8 +2329,7 @@ function render(){
   S.pages.forEach((pg,i)=>{ if(pg.url && Math.abs(i-sp[0])>14){ URL.revokeObjectURL(pg.url); pg.url=null; pg.p=null; } });
   const sl=$('slider'); sl.value=S.idx; sl.style.direction=S.dir;
   $('endL').textContent = S.dir==='rtl'?'最後':'最初'; $('endR').textContent = S.dir==='rtl'?'最初':'最後';
-  const a=sp[0]+1, b=sp[sp.length-1]+1;
-  $('count').innerHTML = `<b>${a===b?a:a+'–'+b}</b> / ${S.pages.length}`;
+  showCount();
   savePos(sp[sp.length-1]);
   markGrid();
 }
@@ -2110,7 +2365,7 @@ function loadV(d){
 function vShow(k){
   S.idx = k;
   const sl = $('slider'); sl.value = k; sl.style.direction = S.dir;
-  $('count').innerHTML = `<b>${k+1}</b> / ${S.pages.length}`;
+  showCount();
   savePos(k); markGrid();
 }
 function vScroll(){
@@ -2121,7 +2376,7 @@ function vScroll(){
   if(k!==S.idx) vShow(k);
   S.pages.forEach((pg,i)=>{ if(pg.url && Math.abs(i-k) > 10){ const im = kids[i] && kids[i].querySelector('img'); if(im) im.removeAttribute('src'); URL.revokeObjectURL(pg.url); pg.url = null; pg.p = null; } });
   const atEnd = stage.scrollTop + stageH() >= stage.scrollHeight - 4;
-  if(atEnd && !vEndShown){ vEndShown = true; showEnd(); }
+  if(atEnd && !vEndShown && !S.streaming){ vEndShown = true; showEnd(); }
   else if(vEndShown && stage.scrollTop + stageH() < stage.scrollHeight - 240){ vEndShown = false; hideEnd(); }
 }
 let lastSY = 0;
@@ -2358,6 +2613,7 @@ function edgeHint(isNext){ const nx = S.dir==='rtl'?'l':'r'; isNext ? hint(nx,'�
 function go(k, animate=true){
   if(F) finishFlip(true);
   if(!S.spreads.length) return;
+  if(S.streaming && k > S.spreads.length-1){ toast(`この先を読み込み中です（${Math.round(S.streaming.st.have/Math.max(1,S.streaming.st.size)*100)}%）`, 1800); return; }
   const n = Math.max(0, Math.min(S.spreads.length-1, k));
   if(isVert()){ if(k > S.spreads.length-1) showEnd(); else vGoTo(n, animate); return; }
   if(n===S.idx){
@@ -2389,11 +2645,11 @@ function scrollStep(dir){
 }
 function vStep(dir){
   const H = stageH();
-  if(dir>0 && stage.scrollTop + H >= stage.scrollHeight - 4){ showEnd(); return; }
+  if(dir>0 && stage.scrollTop + H >= stage.scrollHeight - 4){ if(S.streaming) toast('この先を読み込み中です', 1500); else showEnd(); return; }
   stage.scrollBy({top: dir*H*0.85, behavior:'smooth'});
 }
-function next(){ hideUI(); if(isVert()) return vStep(1); if(scrollStep(1)) return; go(S.idx+1); }
-function prev(){ hideUI(); if(isVert()) return vStep(-1); if(scrollStep(-1)) return; go(S.idx-1); }
+function next(){ S.userMoved = true; hideUI(); if(isVert()) return vStep(1); if(scrollStep(1)) return; go(S.idx+1); }
+function prev(){ S.userMoved = true; hideUI(); if(isVert()) return vStep(-1); if(scrollStep(-1)) return; go(S.idx-1); }
 const leftward=()=> S.dir==='rtl'?next():prev();
 const rightward=()=> S.dir==='rtl'?prev():next();
 /* menus float over the page: shown by a tap in the middle, hidden again after a moment or on page turn */
@@ -2494,7 +2750,7 @@ let wheelT=0;
 stage.addEventListener('wheel', e=>{ if(S.fit!=='contain' && !e.ctrlKey) return; e.preventDefault(); if(e.ctrlKey){ if(S.fit!=='contain') return; const p=local(e); zoomAt(p.x,p.y,Math.max(1,Math.min(5,Z.s*(e.deltaY<0?1.15:0.87)))); return; }
   const now=Date.now(); if(now-wheelT<260) return; wheelT=now;
   const d=Math.abs(e.deltaY)>=Math.abs(e.deltaX)?e.deltaY:e.deltaX; if(d>0) next(); else if(d<0) prev(); }, {passive:false});
-$('slider').addEventListener('input', e=>{ if(F){ cancelAnimationFrame(F.raf); F=null; } if(isVert()){ vGoTo(+e.target.value, false); return; } S.idx=+e.target.value; render(); });
+$('slider').addEventListener('input', e=>{ S.userMoved = true; if(F){ cancelAnimationFrame(F.raf); F=null; } if(isVert()){ vGoTo(+e.target.value, false); return; } S.idx=+e.target.value; render(); });
 
 document.addEventListener('keydown', e=>{
   if(!$('setSheet').hidden){ const kt = $('keyTest'); if(kt) kt.textContent = `${e.key || '?'}（${e.code || 'コードなし'} / ${e.keyCode || 0}）`; }
