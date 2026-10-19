@@ -1,7 +1,7 @@
-// 見開き本棚: lets the app start without a connection.
+// Comic Viewer (CV): lets the app start without a connection.
 // The page itself is fetched fresh whenever online (so updates arrive right away)
 // and the saved copy is used only when the network is unavailable.
-const CACHE = 'mihiraki-app-v1';
+const CACHE = 'mihiraki-app-v5';
 const CORE = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
