@@ -48,6 +48,7 @@ body.ui-hidden #reader > .bar.bottom{transform:translateY(100%);opacity:0;pointe
 @media (prefers-reduced-motion:reduce){ #reader > .bar{transition:none} }
 .logo{font-family:var(--font-logo);font-size:var(--step-1);letter-spacing:.04em;white-space:nowrap;display:flex;align-items:center;gap:8px}
 .logo-mark{width:1.6em;height:1.6em;flex:none}
+#installHelp.flash{background:color-mix(in srgb, var(--accent) 18%, transparent);border-radius:8px;transition:background .4s}
 .book{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.3}
 .book-title{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:copy}
 .book-meta{font-size:var(--step--1);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -158,7 +159,9 @@ body.editing #libView .shelf.list .card > .del{display:flex}
 .empty .btn{margin-top:10px}
 
 /* ---------- reader ---------- */
-.stage{flex:1;min-height:0;position:relative;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
+.stage{flex:1;min-height:0;position:relative;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+/* holding a finger on a page must not bring up the browser's image menu (it would cut a long press short) */
+.stage img{-webkit-touch-callout:none;-webkit-user-drag:none;user-select:none;pointer-events:none}
 .spread{position:absolute;inset:0;padding:0;display:flex;align-items:center;justify-content:center;transform-origin:0 0}
 .spread.pair .half{width:50%;height:100%;display:flex;align-items:center;min-width:0}
 .al-right{justify-content:flex-end}
@@ -377,7 +380,7 @@ kbd{font-family:inherit;background:var(--raise);border:1px solid var(--line);bor
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
     <div class="sheet-head"><h2 id="helpTitle">使い方 <span class="note" id="verHelp" style="font-weight:400"></span></h2><button class="btn" data-close type="button">閉じる</button></div>
     <div class="sheet-body settings">
-      <div class="row"><h3>アプリとして入れる</h3>
+      <div class="row" id="installHelp"><h3>アプリとして入れる</h3>
       <p class="note"><b>Android（Chrome）</b>：上の「アプリとして入れる」ボタン、または右上の︙ →「アプリをインストール」。<br>
         <b>iPhone</b>：共有ボタン（□に↑）→「ホーム画面に追加」（Safari・Chromeどちらでも可）。<br>
         入れると、専用アイコンからアドレスバーなしの全画面で開き、電波がなくても起動して本棚の本を読めます。ネットにつながっているときは、毎回最新の版に自動で更新されます。</p></div>
@@ -614,7 +617,7 @@ onmessage = e => {
 </script>
 <script>
 (() => {
-const APP_VERSION = '2026.10.20-8';
+const APP_VERSION = '2026.10.20-12';
 const $ = id => document.getElementById(id);
 const IMG = /\.(jpe?g|png|gif|webp|avif|bmp)$/i;
 const ARCH = /\.(zip|cbz|rar|cbr)$/i;
@@ -1514,11 +1517,16 @@ function longPressCopy(el, title){
   el.addEventListener('pointerdown', e=>{
     if(e.button>0) return;
     sx = e.clientX; sy = e.clientY; el._lp = false; clearTimeout(t);
-    t = setTimeout(()=>{ t = 0; el._lp = true; el.classList.add('lp'); try{ navigator.vibrate && navigator.vibrate(10); }catch(_){} }, 550);
+    t = setTimeout(()=>{
+      t = 0; el._lp = true; el.classList.add('lp'); try{ navigator.vibrate && navigator.vibrate(10); }catch(_){}
+      // phones only allow copying right after a tap, so offer a button too in case the release never arrives
+      toastAction(`「${shortTitle(title)}」`, 'コピー', ()=>copyTitle(title), 10000);
+      setTimeout(()=>el.classList.remove('lp'), 1200);
+    }, 500);
   });
   el.addEventListener('pointermove', e=>{ if(t && Math.hypot(e.clientX-sx, e.clientY-sy) > 10) cancel(); });
   el.addEventListener('pointerup', ()=>{ if(el._lp){ el.classList.remove('lp'); copyTitle(title); } else cancel(); });
-  el.addEventListener('pointercancel', ()=>{ cancel(); el._lp = false; });
+  el.addEventListener('pointercancel', ()=>{ clearTimeout(t); t = 0; });
   el.addEventListener('contextmenu', e=>e.preventDefault());
   // the click that follows a long press must not open the book
   el.addEventListener('click', e=>{ if(el._lp){ el._lp = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
@@ -1563,7 +1571,7 @@ async function deleteBook(id){
 }
 $('editBtn').onclick = ()=>{ const on = !document.body.classList.contains('editing'); document.body.classList.toggle('editing', on); $('editBtn').setAttribute('aria-pressed', String(on));
   if(on){
-    if(tab==='drive' && !canTrash()){ document.body.classList.remove('editing'); $('editBtn').setAttribute('aria-pressed','false'); toast('削除の許可がまだありません。「Googleにログイン」を押して許可してください', 5000); return; }
+    if(tab==='drive' && !canTrash()){ document.body.classList.remove('editing'); $('editBtn').setAttribute('aria-pressed','false'); toast('移動・削除の許可を求める画面を開きます。許可したあと、もう一度「整理」を押してください', 6000); Drive.login(); return; }
     if(tab!=='drive') toast('削除したい本を2回タップしてください。終わったら「整理」をもう一度押します');
   } else clearPicks();
   syncSelBar();
@@ -1573,7 +1581,7 @@ const canTrash = () => pref.get('driveWrite', false) && /auth\/drive(\s|$)/.test
 $('driveWrite').checked = pref.get('driveWrite', false);
 $('driveWrite').onchange = e=>{
   pref.set('driveWrite', e.target.checked); pref.set('gConsented2', false); Drive.tc = null; Drive.prepare();
-  toast(e.target.checked ? '次に「Googleにログイン」を押すと、削除の許可を求める画面が出ます' : '削除をオフにしました。次のログインから閲覧のみの許可に戻ります', 5000);
+  toast(e.target.checked ? 'ドライブ画面の「移動・削除を許可」か「整理」を押すと、許可を求める画面が出ます' : '削除をオフにしました。次のログインから閲覧のみの許可に戻ります', 5000);
   if(tab==='drive') renderDrive();
 };
 
@@ -2062,11 +2070,14 @@ async function renderDrive(err){
     return;
   }
   if(!Drive.ready()){
-    $('dLogin').hidden = false;
+    $('dLogin').hidden = false; $('dLogin').textContent = 'Googleにログイン';
     driveMsg(`<h2>Googleにログインしてください</h2>${err ? '<span class="warn">'+esc(err)+'</span><br>' : ''}ドライブの中を、選ばずに表紙つきで見られます。ログインは1時間ごとに切れます。<br><button class="btn primary" type="button" data-login>Googleにログイン</button>`);
     return;
   }
   driveMsg(err ? `<span class="warn">${esc(err)}</span>` : '');
+  // logged in, but only with read access while moving/trashing is switched on: offer the extra permission
+  if(pref.get('driveWrite', false) && !canTrash()){ $('dLogin').hidden = false; $('dLogin').textContent = '移動・削除を許可'; }
+  else $('dLogin').textContent = 'Googleにログイン';
   const top = dstack[dstack.length-1];
   if(top.type==='arc'){ renderArcItems(top); return; }
   const key = top.type==='shared' ? 'shared' : top.id;
@@ -2298,12 +2309,13 @@ function copyText(t, done='コピーしました'){
     const ta = document.createElement('textarea'); ta.value = t; ta.setAttribute('readonly',''); ta.style.cssText='position:fixed;top:0;left:0;opacity:0';
     document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, t.length);
     let ok = false; try{ ok = document.execCommand('copy'); }catch(_){}
-    ta.remove(); toast(ok ? done : 'コピーできませんでした');
+    ta.remove(); ok ? toast(done) : toastAction('コピーできませんでした', 'もう一度', ()=>copyText(t, done), 10000);
   };
   if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(()=>toast(done), fallback);
   else fallback();
 }
-const copyTitle = t => { t = Array.from(String(t||'').normalize('NFC').trim()).slice(0, 10).join('').trim(); if(t) copyText(t, `タイトルの先頭10文字をコピーしました：${t}`); };
+const shortTitle = t => Array.from(String(t||'').normalize('NFC').trim()).slice(0, 10).join('').trim();
+const copyTitle = t => { t = shortTitle(t); if(t) copyText(t, `タイトルの先頭10文字をコピーしました：${t}`); };
 $('copyOrigin').onclick = ()=>copyText($('originText').textContent);
 $('bookTitle').onclick = ()=>{ showUI(); copyTitle(S.title); };
 
@@ -2604,7 +2616,7 @@ const curPage = () => (S.spreads[S.idx]||[0])[0];
 const pageAt = (sp, side) => sp.length!==2 ? null : ((S.dir==='rtl' ? 'right' : 'left')===side ? sp[0] : sp[1]);
 const alignOf = side => side==='left' ? 'al-right' : 'al-left';
 function pageImg(i){
-  const im=document.createElement('img'); im.alt=`${i+1}ページ`; im.decoding='async'; im.dataset.i=i;
+  const im=document.createElement('img'); im.alt=`${i+1}ページ`; im.decoding='async'; im.dataset.i=i; im.draggable=false;
   ensure(i).then(pg=>{ if(pg) im.src=pg.url; });
   return im;
 }
@@ -3095,6 +3107,8 @@ function pointerEnd(e){
   else if(!flipping() && !isVert() && Z.s===1 && Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)*1.4){ const fwd = (S.dir==='rtl') === (dx>0); hideUI(); go(S.idx + (fwd ? 1 : -1)); }
 }
 stage.addEventListener('pointerup', pointerEnd);
+stage.addEventListener('contextmenu', e=>e.preventDefault());
+stage.addEventListener('dragstart', e=>e.preventDefault());
 stage.addEventListener('pointercancel', pointerEnd);
 function onTap(p){
   const now=Date.now(), w=stageW();
@@ -3385,13 +3399,22 @@ if('serviceWorker' in navigator && !framed && document.querySelector('link[rel="
 window.addEventListener('beforeinstallprompt', e=>{ e.preventDefault(); installEvt = e; $('installBtn').hidden = false; });
 window.addEventListener('appinstalled', ()=>{ installEvt = null; $('installBtn').hidden = true; toast('アプリとして入れました。ホーム画面のアイコンから開けます'); });
 $('installBtn').onclick = async ()=>{
-  if(!installEvt){ showSheet('helpSheet'); return; }
+  if(!installEvt){
+    // Chrome hasn't offered its own install prompt (iPhone never does): show the steps instead
+    showSheet('helpSheet');
+    setTimeout(()=>{ const r = $('installHelp'); if(r){ r.scrollIntoView({block:'start', behavior:'smooth'}); r.classList.add('flash'); setTimeout(()=>r.classList.remove('flash'), 1600); } }, 80);
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+    toast(ios ? '共有ボタン（□に↑）→「ホーム画面に追加」で入れられます' : 'Chromeの右上 ︙ →「アプリをインストール」または「ホーム画面に追加」で入れられます', 6000);
+    return;
+  }
   installEvt.prompt();
   try{ const r = await installEvt.userChoice; if(r && r.outcome==='accepted') $('installBtn').hidden = true; }catch(e){}
   installEvt = null;
 };
 const standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
 if(standalone) document.documentElement.classList.add('standalone');
+// always offer the button in a normal browser tab; hide it once running as the installed app
+$('installBtn').hidden = standalone || framed;
 syncSettings();
 $('verHelp').textContent = `（版 ${APP_VERSION}）`;
 init();
