@@ -1,4 +1,4 @@
-<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style></head><body><title>見開き漫画ビューア</title>
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><link rel="manifest" href="manifest.webmanifest"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="見開き本棚"><link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="icon" type="image/png" sizes="192x192" href="icon-192.png"><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style></head><body><title>見開き漫画ビューア</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="theme-color" content="#101114">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -37,7 +37,14 @@ button{cursor:pointer}
   padding-block:8px;display:flex;align-items:center;gap:10px;flex:none}
 .top{border-bottom:1px solid var(--line)}
 .bottom{border-top:1px solid var(--line)}
-body.immersive #reader .bar{display:none}
+#reader{position:relative}
+#reader > .bar{position:absolute;left:0;right:0;z-index:4;background:color-mix(in srgb, var(--panel) 90%, transparent);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);transition:transform .22s ease, opacity .22s ease}
+#reader > .bar.top{top:0}
+#reader > .bar.bottom{bottom:0}
+body.ui-hidden #reader > .bar.top{transform:translateY(-100%);opacity:0;pointer-events:none}
+body.ui-hidden #reader > .bar.bottom{transform:translateY(100%);opacity:0;pointer-events:none}
+@media (prefers-reduced-motion:reduce){ #reader > .bar{transition:none} }
 .logo{font-family:var(--font-logo);font-size:var(--step-1);letter-spacing:.04em;white-space:nowrap}
 .book{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.3}
 .book-title{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -133,11 +140,13 @@ body.editing #libView .shelf.list .card > .del{display:flex}
 
 /* ---------- reader ---------- */
 .stage{flex:1;min-height:0;position:relative;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
-.spread{position:absolute;inset:0;padding:6px;display:flex;align-items:center;justify-content:center;transform-origin:0 0}
+.spread{position:absolute;inset:0;padding:0;display:flex;align-items:center;justify-content:center;transform-origin:0 0}
 .spread.pair .half{width:50%;height:100%;display:flex;align-items:center;min-width:0}
 .al-right{justify-content:flex-end}
 .al-left{justify-content:flex-start}
-.spread img{display:block;max-width:100%;max-height:100%;object-fit:contain;-webkit-user-drag:none;pointer-events:none;box-shadow:0 2px 18px rgba(0,0,0,.45)}
+.spread img{display:block;width:100%;height:100%;object-fit:contain;-webkit-user-drag:none;pointer-events:none}
+.spread .al-right img{object-position:right center}
+.spread .al-left img{object-position:left center}
 .spread img:not([src]){visibility:hidden}
 .curl{position:absolute;pointer-events:none;transform-origin:center}
 .curl>.ccast,.curl>.cfront,.curl>.cflapwrap{position:absolute;left:0;top:0;width:100%;height:100%}
@@ -256,6 +265,8 @@ kbd{font-family:inherit;background:var(--raise);border:1px solid var(--line);bor
         <svg id="viewIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"></svg><span class="lbl" id="viewLbl">表紙あり</span></button>
       <button class="btn" id="editBtn" type="button" aria-pressed="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg><span class="lbl">整理</span></button>
+      <button class="btn primary" id="installBtn" type="button" hidden title="ホーム画面にアプリとして入れる">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M12 7v7M9 11l3 3 3-3"/></svg><span class="lbl">アプリとして入れる</span></button>
       <button class="btn" id="helpBtn" type="button">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.01"/></svg><span class="lbl">使い方</span></button>
     </div>
@@ -340,6 +351,10 @@ kbd{font-family:inherit;background:var(--raise);border:1px solid var(--line);bor
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
     <div class="sheet-head"><h2 id="helpTitle">使い方 <span class="note" id="verHelp" style="font-weight:400"></span></h2><button class="btn" data-close type="button">閉じる</button></div>
     <div class="sheet-body settings">
+      <div class="row"><h3>アプリとして入れる</h3>
+      <p class="note"><b>Android（Chrome）</b>：上の「アプリとして入れる」ボタン、または右上の︙ →「アプリをインストール」。<br>
+        <b>iPhone</b>：共有ボタン（□に↑）→「ホーム画面に追加」（Safari・Chromeどちらでも可）。<br>
+        入れると、専用アイコンからアドレスバーなしの全画面で開き、電波がなくても起動して本棚の本を読めます。ネットにつながっているときは、毎回最新の版に自動で更新されます。</p></div>
       <div class="row"><h3>ドライブをのぞく</h3>
       <p class="note"><b>ドライブ</b> タブで、Googleドライブのフォルダを表紙つきで見られます。ZIPは目次と1枚目だけ、RARは先頭の数MBだけを取り寄せて表紙を作るので、大きなファイルでもすぐ並びます。タップすると保存せずにそのまま読めます（ZIPは読むページだけ取り寄せ、RARは全体をダウンロードしてから開きます）。<b>↓</b> で本棚に保存すると、ネットなしでも読めます。最初に一度だけ「準備・設定」が必要です。</p></div>
       <div class="row"><h3>端末から取り込む</h3>
@@ -539,7 +554,7 @@ onmessage = e => {
 </script>
 <script>
 (() => {
-const APP_VERSION = '2026.10.19-4';
+const APP_VERSION = '2026.10.19-6';
 const $ = id => document.getElementById(id);
 const IMG = /\.(jpe?g|png|gif|webp|avif|bmp)$/i;
 const ARCH = /\.(zip|cbz|rar|cbr)$/i;
@@ -1837,13 +1852,14 @@ document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState=
 function showReader(){
   if($('reader').hidden){ try{ history.pushState({reader:1}, ''); }catch(e){} }
   $('reader').hidden = false; $('shelfView').hidden = true;
-  document.body.classList.remove('immersive','editing'); $('editBtn').setAttribute('aria-pressed','false');
+  document.body.classList.remove('editing'); $('editBtn').setAttribute('aria-pressed','false');
   wake(true);
 }
 function closeReader(fromHistory, keepHistory){
   if($('reader').hidden) return;
   if(!$('cropper').hidden){ $('cropper').hidden = true; if(CR.url){ URL.revokeObjectURL(CR.url); CR.url = null; } }
   readerToken++;
+  clearTimeout(uiT); document.body.classList.remove('ui-hidden');
   if(F){ cancelAnimationFrame(F.raf); F=null; }
   S.pages.forEach(p=>p.url && URL.revokeObjectURL(p.url));
   S.pages=[]; S.spreads=[]; S.book=null; S.item=null; clearStage(); $('grid').innerHTML='';
@@ -1957,6 +1973,7 @@ function resetPages(){
 function startReading(title, entries, book, meta, item){
   S.title = title; S.book = book; S.item = item; S.shiftOne=false; $('shiftOne').checked=false;
   S.entries = entries; S.pages = makePages(entries);
+  document.fullscreenElement ? hideUI() : showUI();
   { const last = pref.get('fitLast','contain'); S.fit = pref.get('fit:'+bookKey(), null) || (last==='vertical' ? 'contain' : last); if(!FITS.includes(S.fit)) S.fit = 'contain'; }
   applyFit(); hideEnd();
   S.coverTarget = book && (book.kind==='zip' || book.kind==='pages') ? {type:'lib', id:book.id} : (item && item.ck ? {type:'drive', ck:item.ck} : null);
@@ -2107,6 +2124,8 @@ function vScroll(){
   if(atEnd && !vEndShown){ vEndShown = true; showEnd(); }
   else if(vEndShown && stage.scrollTop + stageH() < stage.scrollHeight - 240){ vEndShown = false; hideEnd(); }
 }
+let lastSY = 0;
+stage.addEventListener('scroll', ()=>{ const y = stage.scrollTop + stage.scrollLeft; if(Math.abs(y-lastSY) > 40){ lastSY = y; hideUI(); } }, {passive:true});
 stage.addEventListener('scroll', ()=>{ if(!isVert()) return; cancelAnimationFrame(vRaf); vRaf = requestAnimationFrame(vScroll); }, {passive:true});
 function vGoTo(n, smooth){
   const box = stage.querySelector('.vlist'); const t = box && box.children[n];
@@ -2174,8 +2193,16 @@ function leafRect(sp, side){
   const pi = side ? pageAt(sp, side) : sp[0];
   const st = stage.getBoundingClientRect();
   const im = stage.querySelector(`:scope > .spread img[data-i="${pi}"]`);
-  if(im && im.naturalWidth){ const r = im.getBoundingClientRect(); if(r.width>10 && r.height>10) return {x:r.left-st.left, y:r.top-st.top, w:r.width, h:r.height}; }
-  const pad=6, W=stageW()-pad*2, H=stageH()-pad*2;
+  if(im && im.naturalWidth){
+    // the picture inside the element (it is scaled to fit and leans toward the spine)
+    const r = im.getBoundingClientRect(), s = Math.min(r.width/im.naturalWidth, r.height/im.naturalHeight);
+    const w = im.naturalWidth*s, h = im.naturalHeight*s, half = im.closest('.half');
+    let x = r.left + (r.width-w)/2;
+    if(half && half.classList.contains('al-right')) x = r.right - w;
+    if(half && half.classList.contains('al-left')) x = r.left;
+    if(w>10 && h>10) return {x:x-st.left, y:r.top + (r.height-h)/2 - st.top, w, h};
+  }
+  const pad=0, W=stageW()-pad*2, H=stageH()-pad*2;
   if(side) return {x: side==='left' ? pad : pad+W/2, y:pad, w:W/2, h:H};
   return {x:pad, y:pad, w:W, h:H};
 }
@@ -2365,11 +2392,19 @@ function vStep(dir){
   if(dir>0 && stage.scrollTop + H >= stage.scrollHeight - 4){ showEnd(); return; }
   stage.scrollBy({top: dir*H*0.85, behavior:'smooth'});
 }
-function next(){ if(isVert()) return vStep(1); if(scrollStep(1)) return; go(S.idx+1); }
-function prev(){ if(isVert()) return vStep(-1); if(scrollStep(-1)) return; go(S.idx-1); }
+function next(){ hideUI(); if(isVert()) return vStep(1); if(scrollStep(1)) return; go(S.idx+1); }
+function prev(){ hideUI(); if(isVert()) return vStep(-1); if(scrollStep(-1)) return; go(S.idx-1); }
 const leftward=()=> S.dir==='rtl'?next():prev();
 const rightward=()=> S.dir==='rtl'?prev():next();
-function toggleUI(){ document.body.classList.toggle('immersive'); requestAnimationFrame(onResize); }
+/* menus float over the page: shown by a tap in the middle, hidden again after a moment or on page turn */
+let uiT = 0;
+function uiBusy(){ return !!document.querySelector('.sheet-back:not([hidden])') || !$('cropper').hidden; }
+function showUI(stay){ document.body.classList.remove('ui-hidden'); clearTimeout(uiT); if(!stay) uiT = setTimeout(hideUI, 3500); }
+function hideUI(){ clearTimeout(uiT); if($('reader').hidden || uiBusy()) return; document.body.classList.add('ui-hidden'); }
+function toggleUI(){ document.body.classList.contains('ui-hidden') ? showUI() : hideUI(); }
+// touching the menus keeps them up
+document.querySelectorAll('#reader > .bar').forEach(b=>{ b.addEventListener('pointerdown', ()=>showUI()); b.addEventListener('input', ()=>showUI()); });
+document.addEventListener('fullscreenchange', ()=>{ if(document.fullscreenElement && !$('reader').hidden) hideUI(); });
 
 /* touch: drag to turn, tap zones, pinch zoom, pan, double-tap zoom */
 const Z = {s:1, x:0, y:0};
@@ -2401,6 +2436,7 @@ stage.addEventListener('pointermove', e=>{
     if(Z.s>1){ Z.x=G.ox+dx; Z.y=G.oy+dy; clampZoom(); applyZoom(); return; }
     if(!G.flip && flipping() && Math.abs(dx)>10 && Math.abs(dx)>Math.abs(dy)*1.2 && S.spreads.length){
       if(F) finishFlip(true);
+      hideUI();
       startFlip((S.dir==='rtl') === (dx>0), G.sy);
       G.flip = true; G.ps = toPage(G.sx, G.sy);
     }
@@ -2439,7 +2475,7 @@ function pointerEnd(e){
   if(e.type==='pointercancel') return;
   const dx=p.x-g.sx, dy=p.y-g.sy;
   if(!g.moved && Date.now()-g.t < 400) onTap(p);
-  else if(!flipping() && !isVert() && Z.s===1 && Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)*1.4){ const fwd = (S.dir==='rtl') === (dx>0); go(S.idx + (fwd ? 1 : -1)); }
+  else if(!flipping() && !isVert() && Z.s===1 && Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy)*1.4){ const fwd = (S.dir==='rtl') === (dx>0); hideUI(); go(S.idx + (fwd ? 1 : -1)); }
 }
 stage.addEventListener('pointerup', pointerEnd);
 stage.addEventListener('pointercancel', pointerEnd);
@@ -2464,7 +2500,7 @@ document.addEventListener('keydown', e=>{
   if(!$('setSheet').hidden){ const kt = $('keyTest'); if(kt) kt.textContent = `${e.key || '?'}（${e.code || 'コードなし'} / ${e.keyCode || 0}）`; }
   if(!$('cropper').hidden){ if(e.key==='Escape') closeCropper(false); return; }
   const open = document.querySelector('.sheet-back:not([hidden])');
-  if(e.key==='Escape'){ if(open){ open.hidden=true; return; } if(!$('reader').hidden){ if(document.body.classList.contains('immersive')) toggleUI(); else closeReader(false); } return; }
+  if(e.key==='Escape'){ if(open){ open.hidden=true; return; } if(!$('reader').hidden) closeReader(false); return; }
   if(open || $('reader').hidden) return;
   if(e.target.closest && e.target.closest('input')) return;
   if(e.keyCode===174 || e.keyCode===175){ e.preventDefault(); e.keyCode===174 ? next() : prev(); return; }
@@ -2724,6 +2760,21 @@ async function init(){
   await makeSample();
   setTab(pref.get('tab','lib')==='drive' ? 'drive' : 'lib');
 }
+/* installable app: offline start + install button (only on the GitHub Pages copy) */
+let installEvt = null;
+if('serviceWorker' in navigator && !framed && document.querySelector('link[rel="manifest"]') && (location.protocol==='https:' || location.hostname==='localhost')){
+  navigator.serviceWorker.register('./sw.js').catch(()=>{});
+}
+window.addEventListener('beforeinstallprompt', e=>{ e.preventDefault(); installEvt = e; $('installBtn').hidden = false; });
+window.addEventListener('appinstalled', ()=>{ installEvt = null; $('installBtn').hidden = true; toast('アプリとして入れました。ホーム画面のアイコンから開けます'); });
+$('installBtn').onclick = async ()=>{
+  if(!installEvt){ showSheet('helpSheet'); return; }
+  installEvt.prompt();
+  try{ const r = await installEvt.userChoice; if(r && r.outcome==='accepted') $('installBtn').hidden = true; }catch(e){}
+  installEvt = null;
+};
+const standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+if(standalone) document.documentElement.classList.add('standalone');
 syncSettings();
 $('verHelp').textContent = `（版 ${APP_VERSION}）`;
 init();
