@@ -60,7 +60,7 @@ body.ui-hidden #reader > .bar.bottom{transform:translateY(100%);opacity:0;pointe
 #editBtn[aria-pressed="true"]{border-color:var(--danger);color:var(--danger)}
 .btn svg{width:18px;height:18px;flex:none}
 @media (pointer:coarse){ .btn{min-height:44px;padding:9px 13px} .bar{padding-block:10px} }
-@media (max-width:640px){ .lbl{display:none} #reader .logo{display:none} .shelf-bar .logo{display:none}
+@media (max-width:640px){ .lbl:not(.keep){display:none} #reader .logo{display:none} .shelf-bar .logo{display:none}
   .shelf-bar .tabs{margin-right:auto} .shelf-bar .search{order:3;flex:1 1 100%} .search select{flex:0 1 46%} }
 
 /* ---------- shelf / drive ---------- */
@@ -125,6 +125,11 @@ body.editing #driveView .pick{display:grid}
 .selbar{position:fixed;left:0;right:0;bottom:0;z-index:15;background:var(--panel);border-top:1px solid var(--line);display:flex;align-items:center;gap:8px;flex-wrap:wrap;
   padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));padding-top:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom, 0px))}
 .selbar .sel-n{flex:1;min-width:8em;font-weight:700}
+.sheet-back.center{align-items:center}
+.sheet-back.center .sheet{border-radius:14px;border-bottom:1px solid var(--line);max-width:min(440px, calc(100vw - 32px))}
+.btn.danger{background:var(--danger);border-color:var(--danger);color:#1a1214;font-weight:700}
+.confirm-btns{display:flex;gap:10px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}
+#trashList{max-height:40vh;overflow:auto;margin:0}
 body.editing #driveView .shelf{padding-bottom:84px}
 .mlist{display:flex;flex-direction:column;gap:2px;max-height:46vh;overflow:auto;margin:4px 0 10px}
 .mlist button{background:none;border:none;border-radius:8px;text-align:left;padding:12px 10px;display:flex;align-items:center;gap:10px;min-height:44px}
@@ -290,8 +295,8 @@ kbd{font-family:inherit;background:var(--raise);border:1px solid var(--line);bor
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">本を追加</span></button>
       <button class="btn" id="viewBtn" type="button" aria-pressed="false" title="表紙あり／表紙なし（一覧）を切り替え">
         <svg id="viewIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"></svg><span class="lbl" id="viewLbl">表紙あり</span></button>
-      <button class="btn" id="editBtn" type="button" aria-pressed="false">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg><span class="lbl">整理</span></button>
+      <button class="btn" id="editBtn" type="button" aria-pressed="false" title="整理（選んで移動・削除）">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg><span class="lbl keep">整理</span></button>
       <button class="btn primary" id="installBtn" type="button" hidden title="ホーム画面にアプリとして入れる">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M12 7v7M9 11l3 3 3-3"/></svg><span class="lbl">アプリとして入れる</span></button>
       <button class="btn" id="helpBtn" type="button">
@@ -526,6 +531,17 @@ kbd{font-family:inherit;background:var(--raise);border:1px solid var(--line);bor
   </div>
 </div>
 
+<div class="sheet-back center" id="trashSheet" hidden>
+  <div class="sheet" role="alertdialog" aria-modal="true" aria-labelledby="trashTitle">
+    <div class="sheet-head"><h2 id="trashTitle">ゴミ箱に移しますか</h2></div>
+    <div class="sheet-body">
+      <p class="note" id="trashList"></p>
+      <p class="note">ゴミ箱に移したファイルは、30日間はGoogleドライブのゴミ箱から元に戻せます。</p>
+      <div class="confirm-btns"><button class="btn" data-close type="button">やめる</button><button class="btn danger" id="trashGo" type="button">ゴミ箱へ移す</button></div>
+    </div>
+  </div>
+</div>
+
 <div class="drop" id="drop" hidden><p>ここにドロップして本棚に取り込む</p></div>
 <div class="toast" id="toast" role="status" hidden></div>
 
@@ -617,7 +633,7 @@ onmessage = e => {
 </script>
 <script>
 (() => {
-const APP_VERSION = '2026.10.20-12';
+const APP_VERSION = '2026.10.20-14';
 const $ = id => document.getElementById(id);
 const IMG = /\.(jpe?g|png|gif|webp|avif|bmp)$/i;
 const ARCH = /\.(zip|cbz|rar|cbr)$/i;
@@ -1582,6 +1598,8 @@ $('driveWrite').checked = pref.get('driveWrite', false);
 $('driveWrite').onchange = e=>{
   pref.set('driveWrite', e.target.checked); pref.set('gConsented2', false); Drive.tc = null; Drive.prepare();
   toast(e.target.checked ? 'ドライブ画面の「移動・削除を許可」か「整理」を押すと、許可を求める画面が出ます' : '削除をオフにしました。次のログインから閲覧のみの許可に戻ります', 5000);
+  $('editBtn').hidden = tab==='drive' && !e.target.checked;
+  if(!e.target.checked && document.body.classList.contains('editing') && tab==='drive') $('editBtn').click();
   if(tab==='drive') renderDrive();
 };
 
@@ -1609,10 +1627,19 @@ function syncSelBar(){
   $('selTrash').title = files!==n ? 'フォルダはゴミ箱に移せません（中のファイルを選んでください）' : '';
 }
 $('selDone').onclick = ()=>{ document.body.classList.remove('editing'); $('editBtn').setAttribute('aria-pressed','false'); clearPicks(); };
-$('selTrash').onclick = async ()=>{
+let sheetOpenedAt = 0;
+const freshTap = () => performance.now() - sheetOpenedAt < 450;   // ignore the second half of a double tap
+$('selTrash').onclick = ()=>{
   const list = [...picked.values()].filter(f=>!isFolder(f)); if(!list.length) return;
-  if($('selTrash').dataset.armed !== '1'){ $('selTrash').dataset.armed = '1'; $('selTrash').textContent = `${list.length}件をゴミ箱へ（もう一度）`; setTimeout(()=>{ $('selTrash').dataset.armed=''; $('selTrash').textContent='ゴミ箱へ'; }, 3000); return; }
-  $('selTrash').dataset.armed = ''; $('selTrash').textContent = 'ゴミ箱へ';
+  const names = list.slice(0, 8).map(f=>'・'+titleOf(f.name)).join('\n') + (list.length>8 ? `\nほか${list.length-8}件` : '');
+  $('trashTitle').textContent = `${list.length}件をゴミ箱に移しますか`;
+  $('trashList').textContent = names; $('trashList').style.whiteSpace = 'pre-line';
+  sheetOpenedAt = performance.now(); showSheet('trashSheet');
+};
+$('trashGo').onclick = async ()=>{
+  if(freshTap()) return;
+  $('trashSheet').hidden = true;
+  const list = [...picked.values()].filter(f=>!isFolder(f)); if(!list.length) return;
   const done = [];
   for(const f of list){ try{ await drivePatch(f.id, {trashed:true}); done.push(f); }catch(e){ if(!reportDriveErr(e)) break; } }
   afterChange();
@@ -1633,14 +1660,21 @@ function afterChange(){ picked.clear(); dirCache.clear(); syncSelBar(); if(tab==
 
 /* folder picker for moving */
 let mStack = [], mBusy = false;
-$('selMove').onclick = ()=>{ if(!picked.size) return; mStack = [{id:'root', name:'マイドライブ'}]; showSheet('moveSheet'); renderMove(); };
+$('selMove').onclick = ()=>{
+  if(!picked.size) return;
+  const path = []; for(const e of dstack){ if(e.type==='folder' && e.id) path.push({id:e.id, name:e.name}); else break; }
+  mStack = path.length && path[0].id==='root' ? path : [{id:'root', name:'マイドライブ'}];
+  sheetOpenedAt = performance.now(); showSheet('moveSheet'); renderMove();
+};
 async function renderMove(){
   const top = mStack[mStack.length-1];
   const cr = $('mCrumbs'); cr.innerHTML = '';
   mStack.forEach((s,i)=>{ if(i) cr.append(Object.assign(document.createElement('span'),{textContent:'›'}));
     const b = document.createElement('button'); b.type='button'; b.textContent = s.name; b.onclick = ()=>{ mStack = mStack.slice(0,i+1); renderMove(); }; cr.append(b); });
   const L = $('mList'); L.innerHTML = '<p class="note">読み込み中…</p>';
-  $('mGo').textContent = `「${top.name}」に移動（${picked.size}件）`;
+  const here = [...picked.values()].every(f=>(f.parents||[]).includes(top.id));
+  $('mGo').disabled = here;
+  $('mGo').textContent = here ? '今あるフォルダです。移動先のフォルダを選んでください' : `「${top.name}」に移動（${picked.size}件）`;
   let folders;
   try{ folders = await Drive.list(`'${top.id}' in parents and mimeType='${FOLDER}' and trashed=false`); }
   catch(e){ L.innerHTML = ''; reportDriveErr(e); return; }
@@ -1665,7 +1699,7 @@ $('mMake').onclick = async ()=>{
   }catch(e){ reportDriveErr(e); }
 };
 $('mGo').onclick = async ()=>{
-  if(mBusy) return; mBusy = true;
+  if(mBusy || freshTap() || $('mGo').disabled) return; mBusy = true;
   const dest = mStack[mStack.length-1], list = [...picked.values()], moved = [];
   $('mGo').textContent = '移動中…';
   try{
