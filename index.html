@@ -102,6 +102,7 @@ body.ui-hidden #reader > .bar.bottom{transform:translateY(100%);opacity:0;pointe
 .cover .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:10px;text-align:center;
   font-weight:700;line-height:1.4;color:var(--muted);font-size:var(--step--1);word-break:break-all;
   background:radial-gradient(circle, color-mix(in srgb, var(--muted) 22%, transparent) 1px, transparent 1.4px) 0 0/8px 8px}
+.card.cfail .cover .ph::after{content:"表紙を作れませんでした";position:absolute;left:0;right:0;bottom:8px;font-weight:500;font-size:10px;color:var(--warn);opacity:.9}
 .cover .ph.busy::after{content:"表紙を準備中";position:absolute;left:0;right:0;bottom:8px;font-weight:500;font-size:10px;color:var(--muted);opacity:.8}
 .cover.folder{background:none;box-shadow:none;display:flex;align-items:center;justify-content:center}
 .cover.folder svg{width:78%;height:auto;color:var(--accent);opacity:.85}
@@ -327,6 +328,7 @@ kbd{font-family:inherit;background:var(--raise);border:1px solid var(--line);bor
         <nav class="crumbs" id="crumbs" aria-label="フォルダの場所"></nav>
         <span id="dSync"></span>
         <div class="tools">
+          <button class="btn" id="dRetry" type="button" hidden>表紙を作り直す</button>
           <button class="btn" id="dLogin" type="button" hidden>Googleにログイン</button>
           <button class="btn" id="dSetupBtn" type="button">準備・設定</button>
         </div>
@@ -642,7 +644,7 @@ onmessage = e => {
 </script>
 <script>
 (() => {
-const APP_VERSION = '2026.10.22-1';
+const APP_VERSION = '2026.10.22-3';
 const $ = id => document.getElementById(id);
 const IMG = /\.(jpe?g|png|gif|webp|avif|bmp)$/i;
 const ARCH = /\.(zip|cbz|rar|cbr)$/i;
@@ -1836,11 +1838,11 @@ const Drive = {
     if(!this.ready()) throw new LoginNeeded('login');
     let r;
     try{ r = await fetch(url, {...opt, headers:{...(opt.headers||{}), Authorization:'Bearer '+this.token}}); }
-    catch(e){ if(e.name==='AbortError') throw e; throw new Error('ネットにつながらないか、ドライブに届きませんでした'); }
+    catch(e){ if(e.name==='AbortError') throw e; throw Object.assign(new Error('ネットにつながらないか、ドライブに届きませんでした'), {transient:true}); }
     if(r.status===401){ this.token=null; try{ sessionStorage.removeItem('mv:gtok'); }catch(e){} throw new LoginNeeded('login'); }
-    if(r.status===403) throw Object.assign(new Error('ドライブへのアクセスが拒否されました（APIの有効化と共有設定を確認してください）'), {status:403});
+    if(r.status===403) throw Object.assign(new Error('ドライブへのアクセスが拒否されました（APIの有効化と共有設定を確認してください）'), {status:403, transient:true});
     if(r.status===404) throw Object.assign(new Error('ファイルが見つかりませんでした（移動・削除された可能性があります）'), {status:404});
-    if(!r.ok) throw new Error(`ドライブからの読み込みに失敗しました（${r.status}）`);
+    if(!r.ok) throw Object.assign(new Error(`ドライブからの読み込みに失敗しました（${r.status}）`), {status:r.status, transient: r.status===429 || r.status>=500});
     return r;
   },
   async list(q){
@@ -2099,7 +2101,7 @@ async function renderDrive(err){
   const seq = ++driveSeq;            // a newer call wins; an older one stops after its await
   renderCrumbs();
   const g=$('dgrid'); g.innerHTML=''; g.classList.toggle('list', listView('drive'));
-  $('dLogin').hidden = true;
+  $('dLogin').hidden = true; $('dRetry').hidden = true;
   if(framed){
     driveMsg(`<h2>この画面ではドライブにつなげません</h2>claude.ai の中で開いているため、Googleへのログインができません。「準備・設定」の手順でこのページを自分のサイト（GitHub Pages）に置くと、ドライブの中を表紙つきでのぞけるようになります。<br>今は <b>本を追加</b> から、ファイル選択画面のドライブを使って取り込めます。<br><button class="btn primary" type="button" data-open>準備・設定を見る</button>`);
     return;
@@ -2231,8 +2233,11 @@ function lazyCover(el, ck, compute){
   const show = c => {
     if(c && c.url){ setCover(el, c.url); if(c.vols){ const bd=el.querySelector('.badge'); if(bd){ bd.textContent=`${c.vols}冊`; bd.classList.add('vols'); } } }
     else { const ph = el.querySelector('.ph'); if(ph) ph.classList.remove('busy'); }
+    el.classList.toggle('cfail', !!(c && c.fail)); syncRetryBtn();
   };
-  const mem = dcover.get(ck); if(mem){ show(mem); return; }
+  let mem = dcover.get(ck);
+  if(mem && mem.fail && mem.transient && Date.now()-mem.t > 60000){ dcover.delete(ck); mem = null; }   // a passing network hiccup: try again
+  if(mem){ el._cover = {ck, compute, show}; show(mem); return; }
   el._cover = {ck, compute, show};
   if(!coverObs) coverObs = new IntersectionObserver(ents=>{ for(const en of ents) if(en.isIntersecting){ coverObs.unobserve(en.target); queueCover(en.target); } }, {root:$('shelfScroll'), rootMargin:'250px'});
   coverObs.observe(el);
@@ -2240,20 +2245,95 @@ function lazyCover(el, ck, compute){
 async function queueCover(el){
   const {ck, show} = el._cover;
   const saved = await DB.get('covers', ck);
-  if(saved && !(saved.fail && saved.v!==3)){ const c = saved.fail ? {fail:true} : {url:URL.createObjectURL(saved.cover), vols:saved.vols||0}; dcover.set(ck, c); show(c); return; }
+  if(keepSaved(saved)){ const c = saved.fail ? {fail:true} : {url:URL.createObjectURL(saved.cover), vols:saved.vols||0}; dcover.set(ck, c); show(c); return; }
   coverJobs.push(el); pumpCovers();
 }
 /* a small note in the corner: which cover was just made, and how many are still waiting */
 let cnT = 0;
-function coverNote(el, msg, fail){
+function showNote(text, left, fail){
   if(tab!=='drive' || !$('reader').hidden) return;
-  const name = (el.querySelector('.ctitle') || {}).textContent || '本';
-  $('cnMsg').textContent = `「${name}」${msg}`;
-  const left = coverJobs.filter(x=>x.isConnected).length + Math.max(0, coverRunning-1);
-  $('cnLeft').textContent = left ? `あと${left}冊` : '';
+  $('cnMsg').textContent = text; $('cnLeft').textContent = left ? `あと${left}冊` : '';
   const n = $('coverNote'); n.classList.toggle('fail', !!fail); n.classList.add('show');
   clearTimeout(cnT); cnT = setTimeout(()=>n.classList.remove('show'), 4000);
 }
+function coverNote(el, msg, fail){
+  const name = (el.querySelector('.ctitle') || {}).textContent || '本';
+  showNote(`「${name}」${msg}`, coverJobs.filter(x=>x.isConnected).length + Math.max(0, coverRunning-1), fail);
+}
+const FAIL_KEEP = 24*3600e3;          // a failed cover is tried again the next day (or right away with the button)
+const keepSaved = saved => saved && !(saved.fail && (saved.v!==4 || Date.now()-(saved.t||0) > FAIL_KEEP));
+
+/* while a book is open: quietly make the covers of the folder it came from, then of its subfolders.
+   One at a time, and it waits while the open book is still downloading. */
+const BG = {on:false, running:false, root:null, folders:[], files:[], seen:new Set(), made:0};
+function bgCoversStart(){
+  if(tab!=='drive' || framed || listView('drive') || !Drive.ready()) return;
+  const top = dstack[dstack.length-1]; if(!top || top.type==='arc') return;
+  const root = top.type==='shared' ? 'shared' : top.id;
+  if(BG.root !== root) Object.assign(BG, {root, folders:[top.type==='shared' ? {shared:true} : {id:top.id}], files:[], seen:new Set()});
+  if(!BG.on) BG.made = 0;
+  BG.on = true;
+  if(!BG.running) bgLoop();
+}
+function bgCoversStop(){
+  BG.on = false;
+  if(BG.made) setTimeout(()=>showNote(`読んでいる間に${BG.made}冊の表紙を作成しました`), 400);
+}
+async function bgLoop(){
+  BG.running = true;
+  try{
+    while(BG.on){
+      if(S.streaming || coverRunning>0 || document.hidden){ await sleep(1500); continue; }
+      if(!Drive.ready()) break;
+      if(BG.files.length){ await bgCover(BG.files.shift()); await sleep(700); continue; }
+      if(!BG.folders.length) break;                  // everything under this folder is done
+      const d = BG.folders.shift(), key = d.shared ? 'shared' : d.id;
+      if(BG.seen.has(key)) continue; BG.seen.add(key);
+      let items = dirCache.get(key);
+      if(!items){
+        try{ items = await Drive.list(d.shared ? 'sharedWithMe=true and trashed=false' : `'${d.id}' in parents and trashed=false`); dirCache.set(key, items); }
+        catch(e){ if(e instanceof LoginNeeded) break; BG.seen.delete(key); BG.folders.push(d); await sleep(5000); continue; }
+      }
+      BG.files.push(...items.filter(f=>f.mimeType!==FOLDER && f.mimeType!==SHORTCUT && ARCH.test(f.name)).sort(driveCmp()));
+      for(const f of items){
+        if(f.mimeType===FOLDER) BG.folders.push({id:f.id});
+        else if(f.mimeType===SHORTCUT && f.shortcutDetails && f.shortcutDetails.targetMimeType===FOLDER) BG.folders.push({id:f.shortcutDetails.targetId});
+      }
+    }
+  } finally { BG.running = false; }
+}
+async function bgCover(f){
+  const ck = 'dc:'+f.id+':'+f.modifiedTime;
+  if(dcover.has(ck) || keepSaved(await DB.get('covers', ck))) return;
+  try{
+    const got = await Sync.fetchCover(ck);
+    if(got){ await DB.put('covers', {cover:got.blob, vols:got.rc.vols||0, custom:!!got.rc.custom, t:got.rc.t}, ck); return; }
+    const r = await peekCover(Drive.file(f));
+    const small = await coverFrom(r.blob), t = Date.now();
+    await DB.put('covers', {cover:small, vols:r.vols||0, t}, ck);
+    Sync.pushCover(ck, small, {vols:r.vols||0, custom:false, t});
+    BG.made++;
+  }catch(e){
+    if(e instanceof LoginNeeded){ BG.on = false; return; }
+    if(!(e && (e.transient || e.name==='AbortError'))) DB.put('covers', {fail:true, v:4, t:Date.now()}, ck).catch(()=>{});
+  }
+}
+
+let retryT = 0;
+function syncRetryBtn(){
+  clearTimeout(retryT);
+  retryT = setTimeout(()=>{ const n = document.querySelectorAll('#dgrid .card.cfail').length; $('dRetry').hidden = !n || tab!=='drive'; $('dRetry').textContent = `表紙を作り直す（${n}冊）`; }, 50);
+}
+$('dRetry').onclick = ()=>{
+  const cards = [...document.querySelectorAll('#dgrid .card.cfail')].filter(el=>el._cover);
+  for(const el of cards){
+    const {ck} = el._cover; dcover.delete(ck); DB.del('covers', ck);
+    el.classList.remove('cfail'); setCover(el, null, el.querySelector('.ctitle').textContent, true);
+    coverJobs.push(el);
+  }
+  syncRetryBtn(); pumpCovers();
+  if(cards.length) toast(`${cards.length}冊の表紙を作り直しています`);
+};
 function pumpCovers(){
   while(coverRunning<2 && coverJobs.length){
     const el = coverJobs.shift(); if(!el.isConnected) continue;
@@ -2277,7 +2357,12 @@ function pumpCovers(){
         coverNote(el, 'の表紙を作成しました');
       }catch(e){
         if(e instanceof LoginNeeded){ show(null); return; }
-        const c={fail:true, v:3}; dcover.set(ck, c); DB.put('covers', c, ck).catch(()=>{}); show(c);
+        if(e && (e.transient || e.name==='AbortError')){
+          const c = {fail:true, transient:true, t:Date.now()}; dcover.set(ck, c); show(c);   // not remembered: tried again on the next visit
+          coverNote(el, 'の表紙を読み込めませんでした（あとでもう一度試します）', true);
+          return;
+        }
+        const c={fail:true, v:4, t:Date.now()}; dcover.set(ck, c); DB.put('covers', c, ck).catch(()=>{}); show(c);
         coverNote(el, 'の表紙は作れませんでした', true);
       }
     })().finally(()=>{ coverRunning--; pumpCovers(); });
@@ -2405,6 +2490,7 @@ function showReader(){
 }
 function closeReader(fromHistory, keepHistory){
   if($('reader').hidden) return;
+  bgCoversStop();
   if(!$('cropper').hidden){ $('cropper').hidden = true; if(CR.url){ URL.revokeObjectURL(CR.url); CR.url = null; } }
   readerToken++;
   if(S.streaming){ S.streaming.st.stop(); S.streaming = null; }
@@ -2600,7 +2686,7 @@ function showCount(){
   $('count').innerHTML = `<b>${a===b?a:a+'–'+b}</b> / ${S.pages.length}${more}`;
 }
 function startReading(title, entries, book, meta, item){
-  $('coverNote').classList.remove('show');
+  $('coverNote').classList.remove('show'); bgCoversStart();
   S.title = title; S.book = book; S.item = item; S.shiftOne=false; $('shiftOne').checked=false; S.userMoved = false;
   S.entries = entries; S.pages = makePages(entries);
   document.fullscreenElement ? hideUI() : showUI();
