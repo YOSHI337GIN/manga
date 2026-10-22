@@ -644,7 +644,7 @@ onmessage = e => {
 </script>
 <script>
 (() => {
-const APP_VERSION = '2026.10.22-3';
+const APP_VERSION = '2026.10.22-4';
 const $ = id => document.getElementById(id);
 const IMG = /\.(jpe?g|png|gif|webp|avif|bmp)$/i;
 const ARCH = /\.(zip|cbz|rar|cbr)$/i;
@@ -763,14 +763,14 @@ async function zipIndex(file){
   for(let n=0;n<count && p+46<=cd.byteLength;n++){
     if(cd.getUint32(p,true)!==0x02014b50) break;
     const flags=cd.getUint16(p+8,true), method=cd.getUint16(p+10,true);
-    let comp=cd.getUint32(p+20,true), lo=cd.getUint32(p+42,true);
+    let comp=cd.getUint32(p+20,true), lo=cd.getUint32(p+42,true), usize=cd.getUint32(p+24,true);
     const nl=cd.getUint16(p+28,true), el=cd.getUint16(p+30,true), cl=cd.getUint16(p+32,true);
     const raw = u8.subarray(p+46, p+46+nl);
     let name; if(flags & 0x800) name = new TextDecoder().decode(raw); else { try{ name=utf8.decode(raw); }catch(e){ name=sjis.decode(raw); } }
     if(comp===0xFFFFFFFF || lo===0xFFFFFFFF){
       let q=p+46+nl; const end=q+el;
       while(q+4<=end){ const id=cd.getUint16(q,true), len=cd.getUint16(q+2,true); if(id===1){ let r=q+4;
-        if(cd.getUint32(p+24,true)===0xFFFFFFFF) r+=8;
+        if(cd.getUint32(p+24,true)===0xFFFFFFFF){ usize=Number(cd.getBigUint64(r,true)); r+=8; }
         if(comp===0xFFFFFFFF){ comp=Number(cd.getBigUint64(r,true)); r+=8; }
         if(lo===0xFFFFFFFF){ lo=Number(cd.getBigUint64(r,true)); } } q+=4+len; }
     }
@@ -780,7 +780,7 @@ async function zipIndex(file){
     const isImg = IMG.test(name), isArc = ARCH.test(name);
     if(!isImg && !isArc) continue;
     if((flags & 1) || (method!==0 && method!==8)){ skipped++; continue; }
-    const e = {name, size:comp, getBlob: () => zipEntryBlob(file, name, method, comp, lo), open: () => zipEntryOpen(file, name, method, comp, lo)};
+    const e = {name, size:comp, usize, method, getBlob: () => zipEntryBlob(file, name, method, comp, lo), open: () => zipEntryOpen(file, name, method, comp, lo), prefix: max => zipEntryPrefix(file, method, comp, lo, max)};
     (isImg ? images : archives).push(e);
   }
   images.sort((a,b)=>coll.compare(a.name,b.name));
@@ -799,6 +799,28 @@ async function zipEntryBlob(file, name, method, comp, lo){
   if(typeof DecompressionStream==='undefined') throw new Error('このブラウザは圧縮ZIPの展開に対応していません。Chromeを最新版にしてください。');
   const out = await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer();
   return new Blob([out], {type});
+}
+// only the start of a compressed entry: enough to find the cover of an archive packed inside, without fetching all of it
+async function zipEntryPrefix(file, method, comp, lo, max){
+  const lh = new DataView(await file.slice(lo, lo+30).arrayBuffer());
+  const start = lo + 30 + lh.getUint16(26,true) + lh.getUint16(28,true);
+  if(method===0) return new Uint8Array(await file.slice(start, start + Math.min(comp, max)).arrayBuffer());
+  if(typeof DecompressionStream==='undefined') throw new Error('このブラウザは圧縮ZIPの展開に対応していません');
+  const ds = new DecompressionStream('deflate-raw'), wr = ds.writable.getWriter(), rd = ds.readable.getReader();
+  const out = []; let got = 0, fed = 0, stop = false;
+  const pump = (async()=>{ try{ for(;;){ const {done, value} = await rd.read(); if(done) break; out.push(value); got += value.length; if(got >= max){ stop = true; break; } } }catch(e){} })();
+  try{
+    while(fed < comp && !stop){
+      const n = Math.min(1024*1024, comp - fed);
+      const chunk = new Uint8Array(await file.slice(start + fed, start + fed + n).arrayBuffer()); fed += n;
+      const wp = wr.write(chunk); wp.catch(()=>{}); await Promise.race([wp, pump]);
+    }
+    if(!stop){ const cp = wr.close(); cp.catch(()=>{}); await Promise.race([cp, pump]); }
+  }catch(e){}
+  await Promise.race([pump, sleep(50)]);
+  try{ rd.cancel().catch(()=>{}); }catch(e){} try{ wr.abort().catch(()=>{}); }catch(e){}
+  const u8 = new Uint8Array(got); let o = 0; for(const c of out){ u8.set(c, o); o += c.length; }
+  return u8;
 }
 async function zipEntryOpen(file, name, method, comp, lo){
   // a stored entry becomes a zero-copy view (local Blob slice or remote RangeFile)
@@ -942,27 +964,50 @@ async function rarHeadParts(file, HEAD=8*1024*1024, TAIL=1024*1024){
   return parts;
 }
 // the first image from the start of a ZIP when its end (the directory) is missing
+// does the decoded data end like a whole JPEG / PNG?
+function imgComplete(chunks){
+  const tail = []; for(let i = chunks.length-1; i >= 0 && tail.length < 16; i--){ const c = chunks[i]; for(let k = c.length-1; k >= 0 && tail.length < 16; k--) tail.unshift(c[k]); }
+  const t = tail.length;
+  if(t >= 2 && tail.slice(-16).some((b, i, a)=> b===0xFF && a[i+1]===0xD9)) return true;                 // JPEG end marker
+  if(t >= 8 && tail[t-8]===0x49 && tail[t-7]===0x45 && tail[t-6]===0x4E && tail[t-5]===0x44) return true; // PNG IEND
+  return false;
+}
 async function zipHeadImage(u8){
   const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
   let p = 0;
   const utf8 = new TextDecoder('utf-8',{fatal:true}); let sjis; try{ sjis = new TextDecoder('shift_jis'); }catch(e){ sjis = new TextDecoder(); }
+  // an entry written as a stream ends with a "data descriptor" that repeats its packed size: find it to know where the data stops
+  const findEnd = from => {
+    for(let q = from; q + 16 <= u8.length; q++){
+      if(u8[q]!==0x50 || u8[q+1]!==0x4b || u8[q+2]!==7 || u8[q+3]!==8) continue;
+      if(dv.getUint32(q+8,true) === q-from) return {end:q, usz:dv.getUint32(q+12,true), next:q+16};
+      if(q + 24 <= u8.length && Number(dv.getBigUint64(q+8,true)) === q-from) return {end:q, usz:Number(dv.getBigUint64(q+16,true)), next:q+24};
+    }
+    return null;
+  };
   while(p + 30 <= u8.length && dv.getUint32(p,true) === 0x04034b50){
-    const flags = dv.getUint16(p+6,true), method = dv.getUint16(p+8,true), comp = dv.getUint32(p+18,true);
+    const flags = dv.getUint16(p+6,true), method = dv.getUint16(p+8,true), comp = dv.getUint32(p+18,true); let usz = dv.getUint32(p+22,true);
     const nl = dv.getUint16(p+26,true), el = dv.getUint16(p+28,true);
     const raw = u8.subarray(p+30, p+30+nl); let name; try{ name = utf8.decode(raw); }catch(e){ name = sjis.decode(raw); }
     const start = p + 30 + nl + el;
-    if(IMG.test(name) && !SKIP.test(name) && !(flags & 1)){
-      const end = (flags & 8) && !comp ? u8.length : Math.min(u8.length, start + comp);
+    const unknown = (flags & 8) && !comp;                      // written as a stream: size only after the data
+    const fe = unknown ? findEnd(start) : null;
+    if(unknown && !fe && !(method===0 && name.endsWith('/'))) return null;      // its end is not in what we have: fetch more
+    if(IMG.test(name) && !SKIP.test(name) && !name.endsWith('/') && !(flags & 1)){
+      const end = fe ? fe.end : Math.min(u8.length, start + comp);
+      if(fe) usz = fe.usz;
       const data = u8.subarray(start, end);
-      if(method===0 && end-start===comp) return new Blob([data], {type:mimeOf(name)});
+      if(method===0) return (fe || end-start===comp) ? new Blob([data], {type:mimeOf(name)}) : null;   // null: the caller fetches more
       if(method===8 && typeof DecompressionStream!=='undefined'){
         const rd = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
-        const chunks = []; try{ for(;;){ const {done, value} = await rd.read(); if(done) break; chunks.push(value); } }catch(e){}
-        if(chunks.length) return new Blob(chunks, {type:mimeOf(name)});
+        const chunks = []; let n = 0, finished = false;
+        try{ for(;;){ const {done, value} = await rd.read(); if(done){ finished = true; break; } chunks.push(value); n += value.length; if(usz && n >= usz){ finished = true; break; } } }
+        catch(e){ if((usz && n >= usz) || imgComplete(chunks)) finished = true; }   // extra bytes after the image are not an error
+        if(finished && chunks.length) return new Blob(chunks, {type:mimeOf(name)});
       }
       return null;
     }
-    if((flags & 8) && !comp) return null;                     // size unknown: cannot skip ahead
+    if(fe){ p = fe.next; continue; }                           // skip a folder or other file written as a stream
     p = start + comp;
   }
   return null;
@@ -1333,14 +1378,24 @@ async function peekCover(file, depth=0){
     const nested = idx.archives.length && depth<3 && idx.images.length < LOOSE_MIN;
     if(!nested && idx.images.length) return {blob: await idx.images[0].getBlob(), vols:0};
     if(idx.archives.length && depth<3){
-      const sub = await peekCover(await idx.archives[0].open(), depth+1);
+      const a = idx.archives[0];
+      if(a.method===8 && a.size > 12*1024*1024){
+        // a compressed archive inside: unpack just its start (8MB, then 24MB) instead of the whole thing
+        let lastErr;
+        for(const max of [8*1024*1024, 24*1024*1024]){
+          try{ const u8 = await a.prefix(max); return {blob: await innerCover({u8, size:a.usize||u8.length, whole: u8.length >= a.usize}), vols: idx.archives.length}; }
+          catch(e){ if(e instanceof LoginNeeded) throw e; lastErr = e; }
+        }
+        if(a.size > 80*1024*1024) throw lastErr;
+      }
+      const sub = await peekCover(await a.open(), depth+1);
       return {blob: sub.blob, vols: idx.archives.length};
     }
     throw new Error('画像なし');
   }
   if(kind==='rar'){
     // most covers sit in the first 2MB; only fetch more when that is not enough
-    const tries = [[2*1024*1024, 256*1024], [8*1024*1024, 1024*1024]];
+    const tries = [[2*1024*1024, 256*1024], [8*1024*1024, 1024*1024], [24*1024*1024, 1024*1024]];
     let last;
     for(const [H, T] of tries){
       try{
@@ -1787,8 +1842,10 @@ $('viewBtn').onclick = ()=>{
 };
 $('dsort').value = pref.get('dsort', 'name');
 $('dsort').addEventListener('change', ()=>{ pref.set('dsort', $('dsort').value); renderDrive(); });
-$('tabLib').onclick = ()=>setTab('lib');
-$('tabDrive').onclick = ()=>setTab('drive');
+const toTop = ()=>$('shelfScroll').scrollTo({top:0, behavior:'smooth'});
+$('tabLib').onclick = ()=>{ if(tab==='lib') toTop(); else setTab('lib'); };
+$('tabDrive').onclick = ()=>{ if(tab==='drive') toTop(); else setTab('drive'); };
+document.querySelector('#shelfView > .bar.top').addEventListener('click', e=>{ if(!e.target.closest('button,input,select,a,label')) toTop(); });
 
 /* =================================================================
    Google Drive (browse without downloading)
@@ -2261,7 +2318,7 @@ function coverNote(el, msg, fail){
   showNote(`「${name}」${msg}`, coverJobs.filter(x=>x.isConnected).length + Math.max(0, coverRunning-1), fail);
 }
 const FAIL_KEEP = 24*3600e3;          // a failed cover is tried again the next day (or right away with the button)
-const keepSaved = saved => saved && !(saved.fail && (saved.v!==4 || Date.now()-(saved.t||0) > FAIL_KEEP));
+const keepSaved = saved => saved && !(saved.fail && (saved.v!==5 || Date.now()-(saved.t||0) > FAIL_KEEP));
 
 /* while a book is open: quietly make the covers of the folder it came from, then of its subfolders.
    One at a time, and it waits while the open book is still downloading. */
@@ -2315,7 +2372,7 @@ async function bgCover(f){
     BG.made++;
   }catch(e){
     if(e instanceof LoginNeeded){ BG.on = false; return; }
-    if(!(e && (e.transient || e.name==='AbortError'))) DB.put('covers', {fail:true, v:4, t:Date.now()}, ck).catch(()=>{});
+    if(!(e && (e.transient || e.name==='AbortError'))) DB.put('covers', {fail:true, v:5, t:Date.now()}, ck).catch(()=>{});
   }
 }
 
@@ -2362,7 +2419,7 @@ function pumpCovers(){
           coverNote(el, 'の表紙を読み込めませんでした（あとでもう一度試します）', true);
           return;
         }
-        const c={fail:true, v:4, t:Date.now()}; dcover.set(ck, c); DB.put('covers', c, ck).catch(()=>{}); show(c);
+        const c={fail:true, v:5, t:Date.now()}; dcover.set(ck, c); DB.put('covers', c, ck).catch(()=>{}); show(c);
         coverNote(el, 'の表紙は作れませんでした', true);
       }
     })().finally(()=>{ coverRunning--; pumpCovers(); });
