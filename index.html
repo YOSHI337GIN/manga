@@ -652,7 +652,7 @@ onmessage = e => {
 </script>
 <script>
 (() => {
-const APP_VERSION = '2026.10.23-1';
+const APP_VERSION = '2026.10.23-2';
 const $ = id => document.getElementById(id);
 const IMG = /\.(jpe?g|png|gif|webp|avif|bmp)$/i;
 const ARCH = /\.(zip|cbz|rar|cbr)$/i;
@@ -2795,30 +2795,43 @@ async function trimBlob(blob){
   const cx = cv.getContext('2d', {willReadFrequently:true}); cx.drawImage(full, 0, 0, w, h);
   const px = cx.getImageData(0, 0, w, h).data;
   const lum = new Float32Array(w*h); for(let i=0, j=0; i<lum.length; i++, j+=4) lum[i] = px[j]*0.299 + px[j+1]*0.587 + px[j+2]*0.114;
-  // the paper colour: the brightest or darkest of the four corners that agree with each other
-  const cs = [lum[0], lum[w-1], lum[(h-1)*w], lum[h*w-1]].sort((a,b)=>a-b);
-  const bg = Math.abs(cs[3]-cs[2]) < 24 && cs[3] > 150 ? cs[3] : Math.abs(cs[1]-cs[0]) < 24 && cs[0] < 90 ? cs[0] : (cs[1]+cs[2])/2;
-  const TH = 38;
-  const rowInk = new Uint16Array(h), colInk = new Uint16Array(w);
-  for(let y=0; y<h; y++) for(let x=0; x<w; x++) if(Math.abs(lum[y*w+x]-bg) > TH){ rowInk[y]++; colInk[x]++; }
-  // from one edge inward: the first band with ink; a thin band followed by a gap (a page number, a speck) is skipped once
-  const edge = (ink, n, len, dir) => {
-    const has = i => ink[i] > Math.max(1, len*0.012);
-    let i = dir > 0 ? 0 : n-1; const end = dir > 0 ? n : -1;
-    while(i !== end && !has(i)) i += dir;
-    if(i === end) return null;
-    let j = i; while(j !== end && has(j)) j += dir;
-    const band = Math.abs(j - i), thin = band < n*0.035;
-    let g = j; while(g !== end && !has(g)) g += dir;
-    if(thin && g !== end && Math.abs(g - j) > n*0.015) return g;
-    return i;
+  // each side is judged by its own colour: a grey bar beside a white page, then the page's own white margin
+  const TH = 34;
+  const val = (isRow, line, k) => isRow ? lum[line*w + k] : lum[k*w + line];
+  const median = (isRow, line) => { const n = isRow ? w : h, a = new Float32Array(n); for(let k=0; k<n; k++) a[k] = val(isRow, line, k); a.sort(); return a[n>>1]; };
+  const inked = (isRow, line, c) => { const n = isRow ? w : h; let m = 0; for(let k=0; k<n; k++) if(Math.abs(val(isRow, line, k) - c) > TH) m++; return m > Math.max(1, n*0.012); };
+  const edge = (isRow, dir) => {
+    const n = isRow ? h : w, end = dir > 0 ? n : -1;
+    let i = dir > 0 ? 0 : n-1, lim = i, outer = null;
+    for(let pass = 0; pass < 3; pass++){
+      const c = median(isRow, i);
+      if(outer === null) outer = c;
+      if(inked(isRow, i, c)) break;                         // the edge itself is drawn on: nothing (more) to cut here
+      lim = i;
+      while(i !== end && !inked(isRow, i, c)) i += dir;
+      if(i === end) return null;
+      // a thin band followed by more margin (a page number, a speck, a scanner line) is cut away too
+      let j = i; while(j !== end && inked(isRow, j, c)) j += dir;
+      let g = j; while(g !== end && !inked(isRow, g, c)) g += dir;
+      if(Math.abs(j-i) < n*0.035 && g !== end && Math.abs(g-j) > n*0.015) i = g;
+    }
+    return {i, lim, outer};
   };
-  const top = edge(rowInk, h, w, 1), bottom = edge(rowInk, h, w, -1), left = edge(colInk, w, h, 1), right = edge(colInk, w, h, -1);
-  if(top===null || left===null || bottom===null || right===null || bottom<=top || right<=left){ full.close && full.close(); return null; }
+  const T = edge(true, 1), B = edge(true, -1), L = edge(false, 1), R = edge(false, -1);
+  if(!T || !B || !L || !R || B.i<=T.i || R.i<=L.i){ full.close && full.close(); return null; }
+  // keep a little of the page's own margin, but never bring back a bar of another colour
   const padX = Math.round(w*0.012), padY = Math.round(h*0.012);
-  let x0 = Math.max(0, left-padX), x1 = Math.min(w, right+1+padX), y0 = Math.max(0, top-padY), y1 = Math.min(h, bottom+1+padY);
+  const x0 = Math.max(0, L.i - Math.min(padX, L.i - L.lim)), x1 = Math.min(w, R.i + 1 + Math.min(padX, R.lim - R.i));
+  const y0 = Math.max(0, T.i - Math.min(padY, T.i - T.lim)), y1 = Math.min(h, B.i + 1 + Math.min(padY, B.lim - B.i));
   const fw = (x1-x0)/w, fh = (y1-y0)/h;
-  if(fw < 0.55 || fh < 0.55 || (fw > 0.97 && fh > 0.97)){ full.close && full.close(); return null; }   // nearly empty page, or nothing to cut
+  if(fw > 0.97 && fh > 0.97){ full.close && full.close(); return null; }   // nothing worth cutting
+  // a big cut is fine when it removes bars of another colour (a page padded to a wide image);
+  // a big cut of the page's own colour means an almost empty page: leave it as it is
+  const kept = []; for(let y=y0; y<y1; y+=2) for(let x=x0; x<x1; x+=2) kept.push(lum[y*w+x]); kept.sort((a,b)=>a-b);
+  const kc = kept[kept.length>>1] || 0;
+  const bars = [[L, x0/w], [R, 1-x1/w], [T, y0/h], [B, 1-y1/h]].every(([e, cut]) => cut < 0.05 || Math.abs(e.outer - kc) > TH);
+  if(!bars && (fw < 0.55 || fh < 0.55)){ full.close && full.close(); return null; }
+  if(fw < 0.2 || fh < 0.2){ full.close && full.close(); return null; }
   const sx = Math.floor(x0/k), sy = Math.floor(y0/k), sw = Math.min(W-sx, Math.ceil((x1-x0)/k)), sh = Math.min(H-sy, Math.ceil((y1-y0)/k));
   const out = document.createElement('canvas'); out.width = sw; out.height = sh;
   out.getContext('2d').drawImage(full, sx, sy, sw, sh, 0, 0, sw, sh); full.close && full.close();
