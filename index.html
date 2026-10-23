@@ -416,7 +416,7 @@ kbd{font-family:inherit;background:var(--raise);border:1px solid var(--line);bor
         上の <b>全体</b> ボタンで「全体 → 横幅 → 縦幅 → 縦スクロール」と表示を切り替えられます。横幅・縦幅では、タップするとページの中を少しずつ進み、端まで来ると次のページへ。本ごとに覚えます。<br>
         最後のページでさらに進むと、ファイル名の巻数から <b>次の巻</b> を探して案内します。</p></div>
       <div class="row"><h3>表紙を差し替える</h3>
-      <p class="note">本を開いて、表紙にしたい場面のページで <b>表紙</b> ボタンを押します。枠を指で動かし、2本指か右下の丸で大きさを変えて「この範囲を表紙にする」。「元の表紙に戻す」でいつでも戻せます。</p></div>
+      <p class="note">本を開いて、表紙にしたい場面のページで <b>表紙</b> ボタンを押します。枠を指で動かし、2本指か右下の丸で大きさを変えて「この範囲を表紙にする」。「元の表紙に戻す」でいつでも戻せます。<br>二重圧縮（RARの中のRARなど）の中の巻を読んでいるときは、「外側の〇〇にも使う」にチェックを入れると、ドライブの一覧に出る外側のファイルの表紙もその絵になります。</p></div>
       <div class="row"><h3>タブレットとiPhoneで続きを読む</h3>
       <p class="note">両方の端末でドライブにログインしていると、読んだ位置と表紙が自動で共有されます（ドライブ内の、このアプリ専用の隠しフォルダに保存。ドライブのファイル一覧には出ません）。片方で作った表紙はもう一方で作り直さないので、iPhoneでも軽く表示できます。同期の状態は本棚の上とドライブ画面に出ます。</p></div>
       <div class="row"><h3>ドライブのファイルを移動・削除する</h3>
@@ -526,6 +526,7 @@ kbd{font-family:inherit;background:var(--raise);border:1px solid var(--line);bor
   <div class="cropstage" id="cropStage"><img id="cropImg" alt="表紙に使うページ"><div class="cropframe" id="cropFrame"><span class="ch"></span></div></div>
   <footer class="bar bottom">
     <div class="seg" id="cropPick"></div>
+    <label class="check" id="cropOuterWrap" hidden><input type="checkbox" id="cropOuter" checked> <span id="cropOuterLbl">外側のファイルの表紙にも使う</span></label>
     <button class="btn" id="cropReset" type="button">元の表紙に戻す</button>
   </footer>
 </div>
@@ -652,7 +653,7 @@ onmessage = e => {
 </script>
 <script>
 (() => {
-const APP_VERSION = '2026.10.23-3';
+const APP_VERSION = '2026.10.24-1';
 const $ = id => document.getElementById(id);
 const IMG = /\.(jpe?g|png|gif|webp|avif|bmp)$/i;
 const ARCH = /\.(zip|cbz|rar|cbr)$/i;
@@ -3485,6 +3486,10 @@ async function openCropper(){
       b.onclick = ()=>loadCropPage(i); pick.append(b);
     }
   }
+  // reading a volume inside another archive: the picture can also become the outer file's cover
+  const outer = coverAncestors();
+  $('cropOuterWrap').hidden = !outer.length;
+  if(outer.length) $('cropOuterLbl').textContent = `外側の「${outer[0].name}」（ドライブの一覧に出る表紙）にも使う`;
   $('cropper').hidden = false;
   try{ history.pushState({crop:1}, ''); }catch(e){}
   await loadCropPage(sp[0]);
@@ -3561,8 +3566,22 @@ function drawFrame(){ const f = CR.f; Object.assign($('cropFrame').style, {left:
     CR.f = {x: f.x + (f.w-w)/2, y: f.y + (f.w-w)/CRATIO/2, w}; clampFrame(); drawFrame(); }, {passive:false});
   window.addEventListener('resize', ()=>{ if(!$('cropper').hidden && CR.img) layoutCrop(false); });
 }
+// the archives this volume sits in (outermost last), with the names shown in the Drive view
+function coverAncestors(){
+  const T = S.coverTarget; if(!T || T.type!=='drive' || !T.ck.includes('#')) return [];
+  const parts = T.ck.split('#'), out = [];
+  for(let k = parts.length-1; k >= 1; k--){
+    const ck = parts.slice(0, k).join('#');
+    const arc = dstack.find(e=>e.type==='arc' && e.ck===ck);
+    out.push({ck, name: arc ? arc.name : (k===1 ? 'ファイル' : baseName(parts[k-1]))});
+  }
+  return out;
+}
 async function saveCover(blob, custom){
   const T = S.coverTarget; if(!T || !blob) return false;
+  if(T.type==='drive' && !$('cropOuterWrap').hidden && $('cropOuter').checked){
+    for(const a of coverAncestors()) if(!(await saveDriveCover(a.ck, blob, custom))) return false;
+  }
   const t = Date.now();
   try{
     if(T.type==='lib'){
@@ -3572,13 +3591,20 @@ async function saveCover(blob, custom){
       coverURL.set(T.id, URL.createObjectURL(blob));
       b.customCover = custom; b.coverT = t; await DB.put('books', b);
       const sk = syncKeyOf(b); if(sk) Sync.pushCover('lib:'+sk, blob, {custom, t});
-    } else {
-      const prev = dcover.get(T.ck) || {};
-      await DB.put('covers', {cover:blob, vols:prev.vols||0, custom, t}, T.ck);
-      if(prev.url) URL.revokeObjectURL(prev.url);
-      dcover.set(T.ck, {url:URL.createObjectURL(blob), vols:prev.vols||0});
-      Sync.pushCover(T.ck, blob, {vols:prev.vols||0, custom, t});
-    }
+    } else return await saveDriveCover(T.ck, blob, custom);
+    return true;
+  }catch(e){ toast(storageError(e).message); return false; }
+}
+async function saveDriveCover(ck, blob, custom){
+  const t = Date.now();
+  try{
+    const prev = dcover.get(ck) || {};
+    const saved = await DB.get('covers', ck);
+    const vols = prev.vols || (saved && saved.vols) || 0;
+    await DB.put('covers', {cover:blob, vols, custom, t}, ck);
+    if(prev.url) URL.revokeObjectURL(prev.url);
+    dcover.set(ck, {url:URL.createObjectURL(blob), vols});
+    Sync.pushCover(ck, blob, {vols, custom, t});
     return true;
   }catch(e){ toast(storageError(e).message); return false; }
 }
@@ -3594,7 +3620,8 @@ $('cropOk').onclick = async ()=>{
     const cv = document.createElement('canvas'); cv.width = 360; cv.height = Math.round(360/CRATIO);
     const c = cv.getContext('2d'); c.imageSmoothingQuality = 'high'; c.drawImage(bmp, 0, 0, cv.width, cv.height); bmp.close && bmp.close();
     const out = await new Promise(r=>cv.toBlob(r, 'image/jpeg', 0.88));
-    if(await saveCover(out, true)){ closeCropper(false); toast('表紙を差し替えました'); }
+    const outerToo = !$('cropOuterWrap').hidden && $('cropOuter').checked;
+    if(await saveCover(out, true)){ closeCropper(false); toast(outerToo ? '表紙を差し替えました（外側のファイルの表紙にも使いました）' : '表紙を差し替えました'); }
   }catch(e){ toast('表紙を作れませんでした。別の範囲でお試しください'); }
 };
 $('cropReset').onclick = async ()=>{
