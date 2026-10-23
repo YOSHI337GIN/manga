@@ -652,7 +652,7 @@ onmessage = e => {
 </script>
 <script>
 (() => {
-const APP_VERSION = '2026.10.23-2';
+const APP_VERSION = '2026.10.23-3';
 const $ = id => document.getElementById(id);
 const IMG = /\.(jpe?g|png|gif|webp|avif|bmp)$/i;
 const ARCH = /\.(zip|cbz|rar|cbr)$/i;
@@ -1390,6 +1390,28 @@ async function rarVolumes(file){
     }}));
 }
 
+// a RAR holding other archives: read its headers one by one, take the first volume by name,
+// and get its cover from just that volume (a slice when stored, the start of it when compressed)
+async function rarNestedCover(file, depth){
+  const w = await rarWalk(file, 400);
+  if(w.bad) return null;
+  const arcs = w.entries.filter(e=>!e.dir && !e.enc && !SKIP.test(e.name) && ARCH.test(e.name));
+  const imgs = w.entries.filter(e=>!e.dir && IMG.test(e.name));
+  if(!arcs.length || imgs.length >= LOOSE_MIN) return null;
+  let e = [...arcs].sort((a,b)=>coll.compare(baseName(a.name), baseName(b.name)) || coll.compare(a.name, b.name))[0];
+  if(w.solid && e !== w.entries.find(x=>!x.dir)) e = arcs[0] === w.entries.find(x=>!x.dir) ? arcs[0] : null;   // solid: only the very first file can be unpacked on its own
+  if(!e) return null;
+  const where = `中の「${baseName(e.name)}」`;
+  try{
+    if(e.method===0) return {blob:(await peekCover(file.slice(e.dataOff, e.dataOff + e.dataSize), depth+1)).blob, vols:arcs.length};
+    let last;
+    for(const bytes of [4*1024*1024, 16*1024*1024]){
+      try{ const pre = await rarSinglePrefix(file, w, e, bytes); return {blob: await innerCover({name:e.name, u8:pre.u8, size:e.unp || pre.u8.length, whole:pre.whole}), vols:arcs.length}; }
+      catch(err){ if(err instanceof LoginNeeded) throw err; last = err; if(e.dataSize <= bytes) break; }
+    }
+    throw last;
+  }catch(err){ if(err instanceof LoginNeeded) throw err; throw withWhere(err, where); }
+}
 /* cover + volume count for a file that has not been imported (local Blob or remote RangeFile) */
 async function peekCover(file, depth=0){
   const kind = await sniff(file);
@@ -1416,8 +1438,14 @@ async function peekCover(file, depth=0){
   if(kind==='rar'){
     // most covers sit in the first 2MB; only fetch more when that is not enough
     const tries = [[2*1024*1024, 256*1024], [8*1024*1024, 1024*1024], [24*1024*1024, 1024*1024]];
-    let last;
+    let last, walked = false, walkErr = null;
     for(const [H, T] of tries){
+      if(last && !walked && depth < 3){
+        // the quick look at the start did not work: if this RAR holds other archives, go straight to the first one
+        walked = true;
+        try{ const n = await rarNestedCover(file, depth); if(n) return n; }
+        catch(e){ if(e instanceof LoginNeeded) throw e; walkErr = e; }
+      }
       try{
         const r = await rarPeek(file.size, await rarHeadParts(file, H, T));
         if(r.image) return {blob:r.image, vols:0};
@@ -1427,7 +1455,7 @@ async function peekCover(file, depth=0){
         return {blob, vols: vols>1 ? vols : 0};
       }catch(e){ if(e instanceof LoginNeeded) throw e; last = e; if(file.size <= H + T) break; }
     }
-    throw last;
+    throw walkErr || last;
   }
   throw new Error('ZIP・RARとして読めませんでした');
 }
