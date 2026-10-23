@@ -102,6 +102,7 @@ body.ui-hidden #reader > .bar.bottom{transform:translateY(100%);opacity:0;pointe
 .cover .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:10px;text-align:center;
   font-weight:700;line-height:1.4;color:var(--muted);font-size:var(--step--1);word-break:break-all;
   background:radial-gradient(circle, color-mix(in srgb, var(--muted) 22%, transparent) 1px, transparent 1.4px) 0 0/8px 8px}
+.card.cfail .cover[data-why] .ph::after{content:"表紙を作れませんでした：" attr(data-why);line-height:1.4;padding:0 6px;bottom:6px}
 .card.cfail .cover .ph::after{content:"表紙を作れませんでした";position:absolute;left:0;right:0;bottom:8px;font-weight:500;font-size:10px;color:var(--warn);opacity:.9}
 .cover .ph.busy::after{content:"表紙を準備中";position:absolute;left:0;right:0;bottom:8px;font-weight:500;font-size:10px;color:var(--muted);opacity:.8}
 .cover.folder{background:none;box-shadow:none;display:flex;align-items:center;justify-content:center}
@@ -132,6 +133,7 @@ body.editing #driveView .pick{display:grid}
   box-shadow:0 6px 18px rgba(0,0,0,.35);opacity:0;transform:translateY(8px);transition:opacity .25s, transform .25s;pointer-events:none;display:flex;gap:8px;align-items:baseline}
 .cover-note.show{opacity:1;transform:none}
 .cover-note .cn-msg{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.cover-note.fail .cn-msg{white-space:normal}
 .cover-note .cn-left{color:var(--muted);white-space:nowrap;flex:none}
 .cover-note.fail .cn-msg{color:var(--warn)}
 body.editing .cover-note{bottom:calc(76px + env(safe-area-inset-bottom, 0px))}
@@ -486,6 +488,12 @@ kbd{font-family:inherit;background:var(--raise);border:1px solid var(--line);bor
           <button type="button" data-v="on">2ページに分ける</button>
         </div>
         <p class="note">「2ページに分ける」にすると、2ページ分が1枚になった画像を真ん中で切って、1ページずつ読めます。横向きの見開き表示では、分けた2ページを左右に並べます。</p></div>
+      <div class="row"><h3>ページの余白</h3>
+        <div class="seg" data-key="trim">
+          <button type="button" data-v="off">そのまま表示</button>
+          <button type="button" data-v="on">余白をカットして大きく表示</button>
+        </div>
+        <p class="note">スキャンした漫画のまわりの白（または黒）の余白を、ページごとに自動で切り取ります。端の小さなページ番号は無視して切ります。ほとんど白いページなど、切ると不自然になるページはそのまま表示します。</p></div>
       <div class="row"><h3>綴じ方向</h3>
         <div class="seg" data-key="dir">
           <button type="button" data-v="rtl">右綴じ（日本の漫画）</button>
@@ -644,7 +652,7 @@ onmessage = e => {
 </script>
 <script>
 (() => {
-const APP_VERSION = '2026.10.22-4';
+const APP_VERSION = '2026.10.23-1';
 const $ = id => document.getElementById(id);
 const IMG = /\.(jpe?g|png|gif|webp|avif|bmp)$/i;
 const ARCH = /\.(zip|cbz|rar|cbr)$/i;
@@ -839,6 +847,18 @@ function unrarWasm(){
   return wasmBin.slice(0);
 }
 function withRar(fn){ const p = rarQ.then(fn, fn); rarQ = p.catch(()=>{}); return p; }
+// a short reason for a cover that could not be made (shown on the card)
+function whyOf(e){
+  const r = e && e.reason, m = (e && e.message) || String(e || '');
+  if(r==='ERAR_MISSING_PASSWORD' || r==='ERAR_BAD_PASSWORD') return 'パスワード付き';
+  if(r==='ERAR_NO_MEMORY' || /memory|allocation/i.test(m)) return 'メモリ不足';
+  if(r==='ERAR_UNKNOWN_FORMAT') return '未対応の形式';
+  if(r==='ERAR_BAD_DATA' || r==='ERAR_EREAD') return '途中までで読めない';
+  if(r) return r;
+  return m.replace(/^Error:\s*/,'').slice(0, 60) || '不明';
+}
+const withWhere = (e, where) => { try{ e.where = e.where ? where + ' › ' + e.where : where; }catch(_){} return e; };
+const timeLimit = (p, ms, msg) => Promise.race([p, new Promise((_, rej)=>setTimeout(()=>rej(new Error(msg)), ms))]);
 function rarErr(e){
   const r = e && e.reason;
   if(r==='ERAR_MISSING_PASSWORD' || r==='ERAR_BAD_PASSWORD') return new Error('パスワード付きのRARには対応していません');
@@ -1384,11 +1404,11 @@ async function peekCover(file, depth=0){
         let lastErr;
         for(const max of [8*1024*1024, 24*1024*1024]){
           try{ const u8 = await a.prefix(max); return {blob: await innerCover({u8, size:a.usize||u8.length, whole: u8.length >= a.usize}), vols: idx.archives.length}; }
-          catch(e){ if(e instanceof LoginNeeded) throw e; lastErr = e; }
+          catch(e){ if(e instanceof LoginNeeded) throw e; lastErr = withWhere(e, `中の「${baseName(a.name)}」`); }
         }
         if(a.size > 80*1024*1024) throw lastErr;
       }
-      const sub = await peekCover(await a.open(), depth+1);
+      let sub; try{ sub = await peekCover(await a.open(), depth+1); }catch(e){ if(e instanceof LoginNeeded) throw e; throw withWhere(e, `中の「${baseName(a.name)}」`); }
       return {blob: sub.blob, vols: idx.archives.length};
     }
     throw new Error('画像なし');
@@ -1403,12 +1423,13 @@ async function peekCover(file, depth=0){
         if(r.image) return {blob:r.image, vols:0};
         let vols = r.vols;
         if(vols <= 1 && depth===0){ try{ const w = await rarWalk(file, 60); if(!w.bad) vols = w.entries.filter(e=>!e.dir && ARCH.test(e.name)).length; }catch(e){ if(e instanceof LoginNeeded) throw e; } }
-        return {blob: await innerCover(r.inner), vols: vols>1 ? vols : 0};
+        let blob; try{ blob = await innerCover(r.inner); }catch(e){ throw withWhere(e, `中の「${baseName(r.inner.name)}」${r.inner.whole ? '' : '（先頭'+Math.round(r.inner.u8.length/1048576)+'MB）'}`); }
+        return {blob, vols: vols>1 ? vols : 0};
       }catch(e){ if(e instanceof LoginNeeded) throw e; last = e; if(file.size <= H + T) break; }
     }
     throw last;
   }
-  throw new Error('未対応');
+  throw new Error('ZIP・RARとして読めませんでした');
 }
 /* PIPELINE_END */
 
@@ -2291,6 +2312,7 @@ function lazyCover(el, ck, compute){
     if(c && c.url){ setCover(el, c.url); if(c.vols){ const bd=el.querySelector('.badge'); if(bd){ bd.textContent=`${c.vols}冊`; bd.classList.add('vols'); } } }
     else { const ph = el.querySelector('.ph'); if(ph) ph.classList.remove('busy'); }
     el.classList.toggle('cfail', !!(c && c.fail)); syncRetryBtn();
+    const cv = el.querySelector('.cover'); if(cv){ if(c && c.fail && c.why) cv.dataset.why = c.why; else delete cv.dataset.why; }
   };
   let mem = dcover.get(ck);
   if(mem && mem.fail && mem.transient && Date.now()-mem.t > 60000){ dcover.delete(ck); mem = null; }   // a passing network hiccup: try again
@@ -2302,7 +2324,7 @@ function lazyCover(el, ck, compute){
 async function queueCover(el){
   const {ck, show} = el._cover;
   const saved = await DB.get('covers', ck);
-  if(keepSaved(saved)){ const c = saved.fail ? {fail:true} : {url:URL.createObjectURL(saved.cover), vols:saved.vols||0}; dcover.set(ck, c); show(c); return; }
+  if(keepSaved(saved)){ const c = saved.fail ? {fail:true, why:saved.why} : {url:URL.createObjectURL(saved.cover), vols:saved.vols||0}; dcover.set(ck, c); show(c); return; }
   coverJobs.push(el); pumpCovers();
 }
 /* a small note in the corner: which cover was just made, and how many are still waiting */
@@ -2365,14 +2387,14 @@ async function bgCover(f){
   try{
     const got = await Sync.fetchCover(ck);
     if(got){ await DB.put('covers', {cover:got.blob, vols:got.rc.vols||0, custom:!!got.rc.custom, t:got.rc.t}, ck); return; }
-    const r = await peekCover(Drive.file(f));
-    const small = await coverFrom(r.blob), t = Date.now();
+    const r = await timeLimit(peekCover(Drive.file(f)), 180000, '時間がかかりすぎました');
+    const small = await coverFrom(r.blob).catch(()=>{ throw new Error('画像を読み込めませんでした（途中で切れている可能性）'); }), t = Date.now();
     await DB.put('covers', {cover:small, vols:r.vols||0, t}, ck);
     Sync.pushCover(ck, small, {vols:r.vols||0, custom:false, t});
     BG.made++;
   }catch(e){
     if(e instanceof LoginNeeded){ BG.on = false; return; }
-    if(!(e && (e.transient || e.name==='AbortError'))) DB.put('covers', {fail:true, v:5, t:Date.now()}, ck).catch(()=>{});
+    if(!(e && (e.transient || e.name==='AbortError'))) DB.put('covers', {fail:true, v:5, t:Date.now(), why:(e && e.where ? e.where + '：' : '') + whyOf(e)}, ck).catch(()=>{});
   }
 }
 
@@ -2406,8 +2428,8 @@ function pumpCovers(){
           coverNote(el, 'の表紙をほかの端末から受け取りました');
           return;
         }
-        const r = await compute();
-        const small = await coverFrom(r.blob);
+        const r = await timeLimit(compute(), 180000, '時間がかかりすぎました');
+        const small = await coverFrom(r.blob).catch(e=>{ throw new Error('画像を読み込めませんでした（途中で切れている可能性）'); });
         const c = {url:URL.createObjectURL(small), vols:r.vols||0}, t = Date.now();
         dcover.set(ck, c); DB.put('covers', {cover:small, vols:c.vols, t}, ck).catch(()=>{}); show(c);
         Sync.pushCover(ck, small, {vols:c.vols, custom:false, t});
@@ -2419,8 +2441,9 @@ function pumpCovers(){
           coverNote(el, 'の表紙を読み込めませんでした（あとでもう一度試します）', true);
           return;
         }
-        const c={fail:true, v:5, t:Date.now()}; dcover.set(ck, c); DB.put('covers', c, ck).catch(()=>{}); show(c);
-        coverNote(el, 'の表紙は作れませんでした', true);
+        const why = (e && e.where ? e.where + '：' : '') + whyOf(e);
+        const c={fail:true, v:5, t:Date.now(), why}; dcover.set(ck, c); DB.put('covers', c, ck).catch(()=>{}); show(c);
+        coverNote(el, `の表紙は作れませんでした（${why}）`, true);
       }
     })().finally(()=>{ coverRunning--; pumpCovers(); });
   }
@@ -2524,7 +2547,7 @@ $('bookTitle').onclick = ()=>{ showUI(); copyTitle(S.title); };
 const stage = $('stage');
 const S = { title:'', book:null, item:null, pages:[], spreads:[], idx:0,
   dir: pref.get('dir','rtl'), mode: pref.get('mode','auto'), flip: pref.get('flip', reduceMotion() ? 'none' : 'curl'),
-  coverSolo: pref.get('coverSolo', true), shiftOne:false, split: pref.get('split','off'), entries:null, coverTarget:null, fit:'contain' };
+  coverSolo: pref.get('coverSolo', true), shiftOne:false, split: pref.get('split','off'), trim: pref.get('trim','off'), entries:null, coverTarget:null, fit:'contain' };
 let readerToken = 0;
 let F = null;                    // page leaf currently turning
 let gridObs = null, thumbURLs = [];
@@ -2763,6 +2786,45 @@ function startReading(title, entries, book, meta, item){
 }
 $('rSave').onclick = ()=>{ const it=S.item; if(!it) return; enqueue(it.name, it.src, it.open); $('rSave').hidden=true; toast('本棚に保存しています。読みながら待てます'); };
 
+/* margins: find the drawn area of a scanned page and cut away the plain border around it */
+async function trimBlob(blob){
+  const full = await createImageBitmap(blob);
+  const W = full.width, H = full.height, A = 260, k = Math.min(1, A / Math.max(W, H));
+  const w = Math.max(8, Math.round(W*k)), h = Math.max(8, Math.round(H*k));
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const cx = cv.getContext('2d', {willReadFrequently:true}); cx.drawImage(full, 0, 0, w, h);
+  const px = cx.getImageData(0, 0, w, h).data;
+  const lum = new Float32Array(w*h); for(let i=0, j=0; i<lum.length; i++, j+=4) lum[i] = px[j]*0.299 + px[j+1]*0.587 + px[j+2]*0.114;
+  // the paper colour: the brightest or darkest of the four corners that agree with each other
+  const cs = [lum[0], lum[w-1], lum[(h-1)*w], lum[h*w-1]].sort((a,b)=>a-b);
+  const bg = Math.abs(cs[3]-cs[2]) < 24 && cs[3] > 150 ? cs[3] : Math.abs(cs[1]-cs[0]) < 24 && cs[0] < 90 ? cs[0] : (cs[1]+cs[2])/2;
+  const TH = 38;
+  const rowInk = new Uint16Array(h), colInk = new Uint16Array(w);
+  for(let y=0; y<h; y++) for(let x=0; x<w; x++) if(Math.abs(lum[y*w+x]-bg) > TH){ rowInk[y]++; colInk[x]++; }
+  // from one edge inward: the first band with ink; a thin band followed by a gap (a page number, a speck) is skipped once
+  const edge = (ink, n, len, dir) => {
+    const has = i => ink[i] > Math.max(1, len*0.012);
+    let i = dir > 0 ? 0 : n-1; const end = dir > 0 ? n : -1;
+    while(i !== end && !has(i)) i += dir;
+    if(i === end) return null;
+    let j = i; while(j !== end && has(j)) j += dir;
+    const band = Math.abs(j - i), thin = band < n*0.035;
+    let g = j; while(g !== end && !has(g)) g += dir;
+    if(thin && g !== end && Math.abs(g - j) > n*0.015) return g;
+    return i;
+  };
+  const top = edge(rowInk, h, w, 1), bottom = edge(rowInk, h, w, -1), left = edge(colInk, w, h, 1), right = edge(colInk, w, h, -1);
+  if(top===null || left===null || bottom===null || right===null || bottom<=top || right<=left){ full.close && full.close(); return null; }
+  const padX = Math.round(w*0.012), padY = Math.round(h*0.012);
+  let x0 = Math.max(0, left-padX), x1 = Math.min(w, right+1+padX), y0 = Math.max(0, top-padY), y1 = Math.min(h, bottom+1+padY);
+  const fw = (x1-x0)/w, fh = (y1-y0)/h;
+  if(fw < 0.55 || fh < 0.55 || (fw > 0.97 && fh > 0.97)){ full.close && full.close(); return null; }   // nearly empty page, or nothing to cut
+  const sx = Math.floor(x0/k), sy = Math.floor(y0/k), sw = Math.min(W-sx, Math.ceil((x1-x0)/k)), sh = Math.min(H-sy, Math.ceil((y1-y0)/k));
+  const out = document.createElement('canvas'); out.width = sw; out.height = sh;
+  out.getContext('2d').drawImage(full, sx, sy, sw, sh, 0, 0, sw, sh); full.close && full.close();
+  const b = await new Promise(r=>out.toBlob(r, 'image/jpeg', 0.92));
+  return b ? {blob:b, w:sw, h:sh} : null;
+}
 function ensure(i){
   const pg = S.pages[i]; if(!pg) return Promise.resolve(null);
   if(pg.url) return Promise.resolve(pg);
@@ -2776,8 +2838,13 @@ function ensure(i){
     if(!d){ URL.revokeObjectURL(url); throw new Error('bad image'); }
     if(tok!==readerToken){ URL.revokeObjectURL(url); return null; }
     if(d.w > d.h*1.1 && S.split==='on' && !pg.half){ URL.revokeObjectURL(url); pg.needSplit = true; scheduleSplit(); return null; }
-    pg.url=url; pg.w=d.w; pg.h=d.h;
-    if(d.w > d.h*1.1 && !pg.wide){ pg.wide=true;
+    if(S.trim==='on'){
+      const t = await trimBlob(blob).catch(()=>null);
+      if(tok!==readerToken){ URL.revokeObjectURL(url); return null; }
+      if(t){ URL.revokeObjectURL(url); pg.url = URL.createObjectURL(t.blob); pg.w = t.w; pg.h = t.h; }
+    }
+    if(!pg.url){ pg.url=url; pg.w=d.w; pg.h=d.h; }
+    if(pg.w > pg.h*1.1 && !pg.wide){ pg.wide=true;
       if(effMode()==='spread'){ if(F) F.dirty=true; else { const cp=curPage(); const before=S.spreads.length; buildSpreads(cp); if(S.spreads.length!==before) render(); } } }
     return pg;
   })().catch(e=>{ pg.p=null; if(e instanceof LoginNeeded) loginLost(); return null; });
@@ -3530,7 +3597,7 @@ function syncSettings(){
 document.querySelectorAll('.seg[data-key] button').forEach(b=>b.onclick=()=>{
   const key=b.parentElement.dataset.key; S[key]=b.dataset.v; pref.set(key,S[key]); syncSettings();
   if(key==='flip' || !S.pages.length) return;
-  if(key==='split' || key==='dir'){ resetPages(); return; }
+  if(key==='split' || key==='dir' || key==='trim'){ resetPages(); return; }
   const p=curPage(); buildSpreads(p); $('grid').classList.toggle('rtl', S.dir==='rtl'); render();
 });
 $('coverSolo').onchange=e=>{ S.coverSolo=e.target.checked; pref.set('coverSolo',S.coverSolo); if(!S.pages.length) return; const p=curPage(); buildSpreads(p); render(); };
